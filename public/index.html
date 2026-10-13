@@ -208,7 +208,7 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
       <label class="toggle" id="hwRow" hidden>Usar o zoom da própria câmera (mais nítido, mas menos suave) <input type="checkbox" id="zoomHw"></label>
       <div class="hint" id="semUltra" hidden>O 0.5x só aparece quando o navegador libera a lente ultra-angular do celular (normalmente na câmera de trás). A câmera da frente quase nunca tem.</div>
       <div class="hint" id="zoomHelp">Durante a gravação: arraste o botão de gravar pra cima (aproxima) ou pra baixo (afasta), faça pinça com 2 dedos na tela, toque 2x na imagem ou use os botões 1x / 2x acima do botão de gravar.</div>
-      <label class="toggle">Gravar em 1080p (mais nítido, mas pesa mais; no iPhone pode fazer a câmera parar) <input type="checkbox" id="hd1080"></label>
+      <label class="toggle">Gravar em 1080p (desligado = 720p) <input type="checkbox" id="hd1080"></label>
       <label class="toggle">Mostrar a imagem inteira da câmera (sem cortar) <input type="checkbox" id="fitWhole"></label>
       <label class="toggle">Espelhar a imagem na tela (câmera da frente) <input type="checkbox" id="mirrorView"></label>
       <label class="toggle">Gravar o vídeo espelhado, igual à prévia (câmera da frente) <input type="checkbox" id="mirrorRec"></label>
@@ -263,7 +263,7 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
 (() => {
   const $ = (id) => document.getElementById(id);
   // A cada versão publicada, este número muda. O app compara com o do site e se atualiza sozinho.
-  const APP_VERSION = '13/10j';
+  const APP_VERSION = '13/10k';
   $('verTxt').textContent = 'versão ' + APP_VERSION + ' · atualiza sozinho';
   const EXAMPLE = `# ABERTURA
 Se você quer começar no *TikTok Shop* e não sabe por onde, presta atenção nesse vídeo.
@@ -284,8 +284,8 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   const prefs = { script: EXAMPLE, speed: 5, size: 32, shade: 55, ph: 42, autoScroll: true, useCountdown: true, flipText: false, fitWhole: false, mirrorRec: true, mirrorView: true, facing: 'user' };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  // Qualidade: no iPhone o padrão é 720p (1080p pesa e o iOS chega a cortar a câmera no meio da gravação)
-  if (prefs.hd1080 === undefined) prefs.hd1080 = !IS_IOS;
+  // Qualidade: 1080p sempre por padrão (a 13/10j tinha posto 720p no iPhone; aqui volta pra 1080p uma vez)
+  if (prefs.hd1080 === undefined || prefs.hdPadrao !== 2) { prefs.hd1080 = true; prefs.hdPadrao = 2; try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch (e) {} }
   const vidCons = extra => Object.assign({ width: { ideal: prefs.hd1080 ? 1920 : 1280 }, height: { ideal: prefs.hd1080 ? 1080 : 720 }, frameRate: { ideal: 30 } }, extra);
   // iPhone: usa o zoom da própria câmera e grava direto dela (igual o app Câmera: zoom suave e sem perder o fim do vídeo).
   // Montar o vídeo quadro a quadro com zoom digital pesa demais no iPhone e a imagem congelava no final.
