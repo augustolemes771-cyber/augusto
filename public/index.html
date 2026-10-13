@@ -258,7 +258,7 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
 (() => {
   const $ = (id) => document.getElementById(id);
   // A cada versão publicada, este número muda. O app compara com o do site e se atualiza sozinho.
-  const APP_VERSION = '13/10g';
+  const APP_VERSION = '13/10i';
   $('verTxt').textContent = 'versão ' + APP_VERSION + ' · atualiza sozinho';
   const EXAMPLE = `# ABERTURA
 Se você quer começar no *TikTok Shop* e não sabe por onde, presta atenção nesse vídeo.
@@ -703,7 +703,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   }
   function vigiarMic(t) {
     if (!t || t._vigiado) return; t._vigiado = true;
-    t.addEventListener('ended', () => { if (isRec()) garantirMic(); });
+    t.addEventListener('ended', () => { if (!isRec()) return; if (SEG_MODE) recuperar(); else garantirMic(); });   // iPhone: microfone caiu -> trecho novo com o microfone novo
     t.addEventListener('unmute', () => ligarNaMesa(t));
   }
   function ligarNaMesa(t) {
@@ -898,12 +898,202 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     return partes;
   }
 
+  /* ---------- MP4 normal (CapCut e outros editores) ----------
+     O iPhone grava MP4 "em fragmentos" (feito pra transmissão). Editores como o CapCut se perdem nesse formato
+     e travam/dessincronizam. Aqui os quadros são copiados, sem recodificar, pra um MP4 comum igual ao do app
+     Câmera: um índice completo (moov) no começo e todos os dados depois. Também emenda vários trechos (pausas).
+     Devolve uma lista de pedaços pra montar o Blob, ou null se o arquivo não for do tipo esperado. */
+  function mp4Normal(bufs) {
+    const dvw = a => new DataView(a.buffer, a.byteOffset, a.byteLength);
+    const tipo4 = (a, o) => String.fromCharCode(a[o + 4], a[o + 5], a[o + 6], a[o + 7]);
+    function caixas(a, o, fim) {
+      const v = dvw(a), r = [];
+      while (o + 8 <= fim) {
+        let tam = v.getUint32(o), cab = 8;
+        if (tam === 1) { tam = Number(v.getBigUint64(o + 8)); cab = 16; }
+        else if (tam === 0) tam = fim - o;
+        if (tam < cab || o + tam > fim) break;
+        r.push({ t: tipo4(a, o), o, cab, tam });
+        o += tam;
+      }
+      return r;
+    }
+    const filho = (a, bx, t) => caixas(a, bx.o + bx.cab, bx.o + bx.tam).find(c => c.t === t);
+    const iguais = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+    const semBtrt = s => { const c = s.slice(); for (let i = 4; i + 16 <= c.length; i++) if (c[i] === 0x62 && c[i + 1] === 0x74 && c[i + 2] === 0x72 && c[i + 3] === 0x74) c.fill(0, i + 4, i + 16); return c; };
+
+    // lê um arquivo em fragmentos: trilhas + lista de quadros (onde está, tamanho, tempo, se é quadro-chave)
+    function ler(a) {
+      const v = dvw(a), top = caixas(a, 0, a.length);
+      const moov = top.find(c => c.t === 'moov');
+      if (!moov || !top.some(c => c.t === 'moof')) return null;
+      const sl = b => a.subarray(b.o, b.o + b.tam);
+      const trilhas = {};
+      for (const tk of caixas(a, moov.o + moov.cab, moov.o + moov.tam).filter(c => c.t === 'trak')) {
+        const tkhd = filho(a, tk, 'tkhd'), mdia = filho(a, tk, 'mdia');
+        if (!tkhd || !mdia) return null;
+        const mdhd = filho(a, mdia, 'mdhd'), hdlr = filho(a, mdia, 'hdlr'), minf = filho(a, mdia, 'minf');
+        const stbl = minf && filho(a, minf, 'stbl'), stsd = stbl && filho(a, stbl, 'stsd');
+        if (!mdhd || !hdlr || !stsd) return null;
+        const id = v.getUint32(tkhd.o + (a[tkhd.o + 8] === 1 ? 28 : 20));
+        trilhas[id] = {
+          id, escala: v.getUint32(mdhd.o + (a[mdhd.o + 8] === 1 ? 28 : 20)), tipo: tipo4(a, hdlr.o + 8 + 4),
+          tkhd: sl(tkhd), mdhd: sl(mdhd), hdlr: sl(hdlr), stsd: sl(stsd),
+          mh: caixas(a, minf.o + minf.cab, minf.o + minf.tam).filter(c => c.t !== 'stbl').map(sl),
+          dDur: 0, dTam: 0, dFl: 0, q: []
+        };
+      }
+      const mvex = filho(a, moov, 'mvex');
+      if (mvex) for (const tx of caixas(a, mvex.o + mvex.cab, mvex.o + mvex.tam).filter(c => c.t === 'trex')) {
+        const t = trilhas[v.getUint32(tx.o + 12)];
+        if (t) { t.dDur = v.getUint32(tx.o + 20); t.dTam = v.getUint32(tx.o + 24); t.dFl = v.getUint32(tx.o + 28); }
+      }
+      for (const moof of top.filter(c => c.t === 'moof')) {
+        let fimAnt = moof.o, primeiro = true;
+        for (const tf of caixas(a, moof.o + moof.cab, moof.o + moof.tam).filter(c => c.t === 'traf')) {
+          const tfhd = filho(a, tf, 'tfhd'), tfdt = filho(a, tf, 'tfdt');
+          if (!tfhd) return null;
+          const fl = v.getUint32(tfhd.o + 8) & 0xffffff, tr = trilhas[v.getUint32(tfhd.o + 12)];
+          if (!tr) return null;
+          let p = tfhd.o + 16, base;
+          if (fl & 1) { base = Number(v.getBigUint64(p)); p += 8; }
+          else base = (fl & 0x20000) || primeiro ? moof.o : fimAnt;
+          if (fl & 2) p += 4;
+          let dDur = tr.dDur, dTam = tr.dTam, dFl = tr.dFl;
+          if (fl & 8) { dDur = v.getUint32(p); p += 4; }
+          if (fl & 0x10) { dTam = v.getUint32(p); p += 4; }
+          if (fl & 0x20) { dFl = v.getUint32(p); p += 4; }
+          let t = tfdt ? (a[tfdt.o + 8] === 1 ? Number(v.getBigUint64(tfdt.o + 12)) : v.getUint32(tfdt.o + 12))
+                       : (tr.q.length ? tr.q[tr.q.length - 1].dts + tr.q[tr.q.length - 1].dur : 0);
+          let cur = base;
+          for (const run of caixas(a, tf.o + tf.cab, tf.o + tf.tam).filter(c => c.t === 'trun')) {
+            const ver = a[run.o + 8], tfl = v.getUint32(run.o + 8) & 0xffffff, n = v.getUint32(run.o + 12);
+            let q = run.o + 16, pf = null;
+            if (tfl & 1) { cur = base + v.getInt32(q); q += 4; }
+            if (tfl & 4) { pf = v.getUint32(q); q += 4; }
+            for (let i = 0; i < n; i++) {
+              let dur = dDur, tam = dTam, sfl = (i === 0 && pf !== null) ? pf : dFl, cto = 0;
+              if (tfl & 0x100) { dur = v.getUint32(q); q += 4; }
+              if (tfl & 0x200) { tam = v.getUint32(q); q += 4; }
+              if (tfl & 0x400) { sfl = v.getUint32(q); q += 4; }
+              if (tfl & 0x800) { cto = ver ? v.getInt32(q) : v.getUint32(q); q += 4; }
+              if (cur + tam > a.length) return null;
+              tr.q.push({ a, off: cur, tam, dts: t, dur, cto, chave: !(sfl & 0x10000) });
+              t += dur; cur += tam;
+            }
+          }
+          fimAnt = cur; primeiro = false;
+        }
+      }
+      const porTipo = {};
+      for (const t of Object.values(trilhas)) { if (porTipo[t.tipo]) return null; porTipo[t.tipo] = t; }
+      return { porTipo };
+    }
+
+    const arqs = bufs.map(b => ler(new Uint8Array(b)));
+    if (!arqs.length || arqs.some(x => !x)) return null;
+    const ref = arqs[0].porTipo;
+    const tipos = Object.keys(ref).sort((x, y) => (y === 'vide') - (x === 'vide'));   // imagem primeiro
+    for (const x of arqs) {
+      if (Object.keys(x.porTipo).sort().join() !== Object.keys(ref).sort().join()) return null;
+      for (const tp of tipos) if (x.porTipo[tp].escala !== ref[tp].escala || !iguais(semBtrt(x.porTipo[tp].stsd), semBtrt(ref[tp].stsd))) return null;
+    }
+
+    // emenda os trechos: cada um começa onde o mais longo (imagem ou som) do anterior terminou
+    const Q = {}; tipos.forEach(tp => Q[tp] = []);
+    let T = 0;
+    for (const x of arqs) {
+      let fim = 0;
+      for (const tp of tipos) {
+        const tr = x.porTipo[tp], d = Math.round(T * tr.escala);
+        for (const s of tr.q) { Q[tp].push(Object.assign({}, s, { dts: s.dts + d })); fim = Math.max(fim, (s.dts + s.dur) / tr.escala); }
+      }
+      T += fim;
+    }
+
+    // ---- escrita ----
+    const BE = (n, b) => { const r = new Uint8Array(b); for (let i = b - 1; i >= 0; i--) { r[i] = n & 255; n = Math.floor(n / 256); } return r; };
+    const u32 = n => BE(n >>> 0 === n ? n : (n < 0 ? n + 4294967296 : n), 4), u16 = n => BE(n, 2), u64 = n => BE(n, 8);
+    const txt = s => Uint8Array.from(s, c => c.charCodeAt(0));
+    const cat = l => { const r = new Uint8Array(l.reduce((s, x) => s + x.length, 0)); let o = 0; for (const x of l) { r.set(x, o); o += x.length; } return r; };
+    const box = (t, ...l) => { const c = cat(l); return cat([u32(c.length + 8), txt(t), c]); };
+    const full = (t, ver, flags, ...l) => box(t, u32((ver << 24) | flags), ...l);
+    const MS = 1000;                                  // escala de tempo do filme (milissegundos)
+    const matriz = [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000];
+
+    const todas = [];
+    tipos.forEach(tp => Q[tp].forEach(s => todas.push({ s, tp, t: s.dts / ref[tp].escala })));
+    todas.sort((x, y) => x.t - y.t || (x.tp === 'vide' ? -1 : 1));
+    const totalDados = todas.reduce((n, x) => n + x.s.tam, 0);
+    const grande = totalDados + 16 > 4294967295;
+    const ftyp = box('ftyp', txt('isom'), u32(512), txt('isom'), txt('iso2'), txt('avc1'), txt('mp41'));
+
+    function montarMoov(base) {
+      // posição de cada quadro dentro do arquivo final
+      let pos = base; for (const x of todas) { x.s.pos = pos; pos += x.s.tam; }
+      let durFilme = 0;
+      const traks = tipos.map((tp, k) => {
+        const tr = ref[tp], q = Q[tp];
+        if (!q.length) return null;
+        const d0 = q[0].dts;
+        const durs = q.map((s, i) => i + 1 < q.length ? Math.max(1, q[i + 1].dts - s.dts) : Math.max(1, s.dur));
+        const durMidia = durs.reduce((n, x) => n + x, 0);
+        const atraso = Math.round(d0 / tr.escala * MS), durTrak = Math.round(durMidia / tr.escala * MS);
+        durFilme = Math.max(durFilme, atraso + durTrak);
+        // tabelas
+        const stts = []; durs.forEach(d => { const u = stts[stts.length - 1]; if (u && u[1] === d) u[0]++; else stts.push([1, d]); });
+        const temCto = q.some(s => s.cto), ctoNeg = q.some(s => s.cto < 0);
+        const ctts = []; if (temCto) q.forEach(s => { const u = ctts[ctts.length - 1]; if (u && u[1] === s.cto) u[0]++; else ctts.push([1, s.cto]); });
+        const chaves = q.every(s => s.chave) ? null : q.map((s, i) => s.chave ? i + 1 : 0).filter(Boolean);
+        const stbl = box('stbl',
+          tr.stsd,
+          full('stts', 0, 0, u32(stts.length), ...stts.flatMap(([c, d]) => [u32(c), u32(d)])),
+          ...(temCto ? [full('ctts', ctoNeg ? 1 : 0, 0, u32(ctts.length), ...ctts.flatMap(([c, o]) => [u32(c), u32(o)]))] : []),
+          ...(chaves && tp === 'vide' ? [full('stss', 0, 0, u32(chaves.length), ...chaves.map(u32))] : []),
+          full('stsc', 0, 0, u32(1), u32(1), u32(1), u32(1)),
+          full('stsz', 0, 0, u32(0), u32(q.length), ...q.map(s => u32(s.tam))),
+          grande ? full('co64', 0, 0, u32(q.length), ...q.map(s => u64(s.pos)))
+                 : full('stco', 0, 0, u32(q.length), ...q.map(s => u32(s.pos))));
+        // cabeçalhos copiados do original, com duração e número da trilha atualizados
+        const tkhd = tr.tkhd.slice(), tv = dvw(tkhd), v1 = tkhd[8] === 1;
+        tkhd[11] |= 3;                                                       // trilha ativa e no filme
+        tv.setUint32(v1 ? 28 : 20, k + 1);
+        if (v1) tv.setBigUint64(36, BigInt(atraso + durTrak)); else tv.setUint32(28, atraso + durTrak);
+        const mdhd = tr.mdhd.slice(), mv = dvw(mdhd);
+        if (mdhd[8] === 1) mv.setBigUint64(32, BigInt(durMidia)); else mv.setUint32(24, durMidia);
+        const elst = full('elst', 0, 0, u32(atraso ? 2 : 1),
+          ...(atraso ? [u32(atraso), u32(0xffffffff), u32(0x10000)] : []),
+          u32(durTrak), u32(temCto ? Math.max(0, q[0].cto) : 0), u32(0x10000));
+        return box('trak', tkhd, box('edts', elst), box('mdia', mdhd, tr.hdlr, box('minf', ...tr.mh, stbl)));
+      }).filter(Boolean);
+      const mvhd = full('mvhd', 0, 0, u32(0), u32(0), u32(MS), u32(durFilme), u32(0x10000), u16(0x100), u16(0), u32(0), u32(0),
+        ...matriz.map(u32), ...Array(6).fill(0).map(() => u32(0)), u32(traks.length + 1));
+      return box('moov', mvhd, ...traks);
+    }
+    const cabMdat = grande ? 16 : 8;
+    let moov = montarMoov(0);                                  // 1ª passada só pra saber o tamanho
+    moov = montarMoov(ftyp.length + moov.length + cabMdat);
+    const mdatCab = grande ? cat([u32(1), txt('mdat'), u64(totalDados + 16)]) : cat([u32(totalDados + 8), txt('mdat')]);
+    const partes = [ftyp, moov, mdatCab];
+    // junta pedaços vizinhos do mesmo arquivo pra não criar milhares de partes
+    let ini = null, ult = null;
+    for (const x of todas) {
+      const s = x.s;
+      if (ult && ult.a === s.a && ult.off + ult.tam === s.off) { ult = s; continue; }
+      if (ini) partes.push(ini.a.subarray(ini.off, ult.off + ult.tam));
+      ini = ult = s;
+    }
+    if (ini) partes.push(ini.a.subarray(ini.off, ult.off + ult.tam));
+    return partes;
+  }
+
   const elapsed = () => (performance.now() - recStart - pausedTotal - (pausedAt ? performance.now() - pausedAt : 0)) / 1000;
   // iPhone: o "continuar" do gravador do Safari às vezes volta só com o som (a imagem some até o fim).
   // Então no iPhone pausar ENCERRA o trecho e continuar começa um trecho novo; no fim, juntarMp4 emenda tudo.
   const SEG_MODE = IS_IOS;
-  let segs = [], segPaused = false, recSrc = null, recType = '';
-  const isRec = () => segPaused || (recorder && (recorder.state === 'recording' || recorder.state === 'paused'));
+  let segs = [], segPaused = false, recSrc = null, recType = '', retomando = false;
+  let ativo = false;                 // entre apertar gravar e apertar parar
+  const isRec = () => segPaused || (ativo && recuperando) || (recorder && (recorder.state === 'recording' || recorder.state === 'paused'));
   function novoRecorder() {
     let r;
     try { r = new MediaRecorder(recSrc, recType ? { mimeType: recType, videoBitsPerSecond: 8000000 } : undefined); }
@@ -925,11 +1115,13 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     chunks = []; pausedTotal = 0; pausedAt = 0;
     const mic = await garantirMic();
     const vsrc = recordingStream();
-    const audio = mic ? (mesaDeSom() || stream.getAudioTracks()[0]) : null;
+    // iPhone: microfone DIRETO, no mesmo relógio da câmera. Pela "mesa de som" (WebAudio) o som tinha relógio próprio,
+    // ia ficando mais comprido que a imagem, a imagem "acabava antes" e no CapCut saía fora de sincronia.
+    const audio = mic ? (IS_IOS ? mic : (mesaDeSom() || stream.getAudioTracks()[0])) : null;
     micAviso = !audio;
     const src = new MediaStream([...vsrc.getVideoTracks(), ...(audio ? [audio] : [])]);
     segs = []; segPaused = false; recSrc = src; recType = type;
-    recorder = novoRecorder();
+    recorder = novoRecorder(); ativo = true; ligarVigia();
     recStart = performance.now();
     $('recBtn').disabled = false; $('recBtn').classList.add('on'); $('recBtn').setAttribute('aria-label', 'Parar gravação');
     $('app').classList.add('recording');
@@ -939,6 +1131,55 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     recTimer = setInterval(() => { $('recPill').textContent = (pausedAt ? 'Pausado · ' : '') + fmt(elapsed()); }, 250);
     if (prefs.autoScroll) startScroll();
   }
+  /* ---------- Vigia da câmera (iPhone) ----------
+     O iPhone às vezes para de mandar imagem no meio da gravação (a imagem congela e o som segue até o fim).
+     Se não chegar quadro novo por 1,2 s, fecha o trecho, reabre a câmera e continua num trecho novo,
+     que no fim é emendado igual às pausas. Em vez de perder o resto do vídeo, fica uma falha de ~1 s. */
+  let vigiaInt = 0, ultQuadro = 0, recuperando = false;
+  function marcarQuadros() {
+    ultQuadro = performance.now();
+    if (typeof cam.requestVideoFrameCallback === 'function') {
+      const f = () => { ultQuadro = performance.now(); if (vigiaInt) cam.requestVideoFrameCallback(f); };
+      cam.requestVideoFrameCallback(f);
+    }
+  }
+  function ligarVigia() {
+    if (!SEG_MODE) return;
+    clearInterval(vigiaInt);
+    vigiaInt = setInterval(() => {
+      if (!ativo || segPaused || recuperando || document.hidden) { ultQuadro = performance.now(); return; }
+      const vt = stream && stream.getVideoTracks()[0];
+      const semQuadro = typeof cam.requestVideoFrameCallback === 'function' && performance.now() - ultQuadro > 1200;
+      if (!vt || vt.readyState !== 'live' || vt.muted || semQuadro) recuperar();
+    }, 300);
+    marcarQuadros();
+  }
+  function desligarVigia() { clearInterval(vigiaInt); vigiaInt = 0; }
+  async function recuperar() {
+    if (recuperando || !ativo) return;
+    recuperando = true;
+    try {
+      const pelaTela = !!recCanvas;            // gravando pelo canvas (espelhado): basta reabrir a câmera
+      let r = null;
+      if (!pelaTela && recorder && recorder.state === 'recording') { r = recorder; r.stop(); }   // salva o trecho até onde tinha imagem
+      const velha = stream && stream.getVideoTracks()[0];
+      try { velha && velha.stop(); } catch (e) {}
+      const s2 = await navigator.mediaDevices.getUserMedia({ video: { facingMode: prefs.facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } });
+      const nv = s2.getVideoTracks()[0];
+      stream = new MediaStream([nv, ...stream.getAudioTracks()]);
+      cam.srcObject = stream; await cam.play().catch(() => {});
+      if (Z.lens === 'main') { Z.track = nv; Z.hwNow = null; render(true); }
+      if (r) await r._pronto;
+      if (!pelaTela && ativo) {
+        const mic = await garantirMic();
+        recSrc = new MediaStream([nv, ...(mic && micOk(mic) ? [mic] : [])]);
+        if (ativo && !segPaused) recorder = novoRecorder();
+      }
+    } catch (e) {}
+    recuperando = false;
+    marcarQuadros();
+  }
+
   function setPauseUI(paused) {
     $('icoPauseRec').hidden = paused; $('icoResumeRec').hidden = !paused;
     $('pauseBtn').setAttribute('aria-label', paused ? 'Continuar gravação' : 'Pausar gravação');
@@ -952,8 +1193,15 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
       if (!segPaused && recorder.state === 'recording') {
         segPaused = true; recorder.stop();                       // fecha este trecho inteiro (com imagem e som)
         pausedAt = performance.now(); stopScroll(); setPauseUI(true);
-      } else if (segPaused) {
-        segPaused = false; recorder = novoRecorder();             // trecho novo, gravador novo
+      } else if (segPaused && !retomando) {
+        retomando = true;
+        garantirMic().then(mic => {                                // o microfone pode ter caído durante a pausa
+          const a = mic && micOk(mic) ? [mic] : recSrc.getAudioTracks().filter(micOk);
+          recSrc = new MediaStream([...recSrc.getVideoTracks(), ...a]);
+          if (!segPaused) { retomando = false; return; }          // parou enquanto isso
+          segPaused = false; recorder = novoRecorder();             // trecho novo, gravador novo
+          retomando = false;
+        });
         pausedTotal += performance.now() - pausedAt; pausedAt = 0; setPauseUI(false);
         if (prefs.autoScroll) startScroll();
       }
@@ -969,6 +1217,8 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   let parando = false;
   async function stopRec() {
     if (parando) return; parando = true;
+    ativo = false; desligarVigia();
+    while (recuperando) await new Promise(r => setTimeout(r, 100));   // espera o vigia terminar de reabrir a câmera
     if (pausedAt) { pausedTotal += performance.now() - pausedAt; pausedAt = 0; }
     lastDuration = elapsed();
     stopScroll();
@@ -991,12 +1241,16 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
     let falhouJuntar = false;
     $('segLinks').hidden = true; $('segLinks').innerHTML = '';
-    if (segs.length > 1 && ext === 'mp4') {
-      $('doneInfo').textContent = 'Juntando os trechos…';
+    if (ext === 'mp4' && segs.length) {
+      // MP4 normal (abre certinho no CapCut); se não der, tenta só emendar os fragmentos; se nem isso, entrega os trechos
+      $('doneInfo').textContent = segs.length > 1 ? 'Juntando os trechos…' : 'Preparando o vídeo…';
+      const bufs = await Promise.all(segs.map(b => b.arrayBuffer()));
       let partes = null;
-      try { partes = juntarMp4(await Promise.all(segs.map(b => b.arrayBuffer()))); } catch (e) { partes = null; }
+      try { partes = mp4Normal(bufs); } catch (e) { partes = null; }
+      if (!partes && segs.length > 1) { try { partes = juntarMp4(bufs); } catch (e) { partes = null; } }
       if (partes) lastBlob = new Blob(partes, { type: 'video/mp4' });
-      else { falhouJuntar = true; lastBlob = segs[0]; }
+      else if (segs.length > 1) { falhouJuntar = true; lastBlob = segs[0]; }
+      else lastBlob = segs[0];
     } else lastBlob = segs[0] || new Blob([], { type: type.split(';')[0] });
     const d = new Date();
     lastName = `video-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.${ext}`;
