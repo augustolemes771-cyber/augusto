@@ -208,6 +208,7 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
       <label class="toggle" id="hwRow" hidden>Usar o zoom da própria câmera (mais nítido, mas menos suave) <input type="checkbox" id="zoomHw"></label>
       <div class="hint" id="semUltra" hidden>O 0.5x só aparece quando o navegador libera a lente ultra-angular do celular (normalmente na câmera de trás). A câmera da frente quase nunca tem.</div>
       <div class="hint" id="zoomHelp">Durante a gravação: arraste o botão de gravar pra cima (aproxima) ou pra baixo (afasta), faça pinça com 2 dedos na tela, toque 2x na imagem ou use os botões 1x / 2x acima do botão de gravar.</div>
+      <label class="toggle">Gravar em 1080p (mais nítido, mas pesa mais; no iPhone pode fazer a câmera parar) <input type="checkbox" id="hd1080"></label>
       <label class="toggle">Mostrar a imagem inteira da câmera (sem cortar) <input type="checkbox" id="fitWhole"></label>
       <label class="toggle">Espelhar a imagem na tela (câmera da frente) <input type="checkbox" id="mirrorView"></label>
       <label class="toggle">Gravar o vídeo espelhado, igual à prévia (câmera da frente) <input type="checkbox" id="mirrorRec"></label>
@@ -227,6 +228,10 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
         <a class="btn btn-primary" id="dlLink" href="#" download="video.mp4">Baixar vídeo</a>
       </div>
       <div class="row" id="segLinks" hidden></div>
+      <details id="diagBox" style="font-size:13px;color:var(--muted)"><summary>Diagnóstico da gravação</summary>
+        <pre id="diagTxt" style="white-space:pre-wrap;font-size:12px;max-height:30vh;overflow:auto;background:#0B0C0F;border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0"></pre>
+        <button class="btn btn-ghost" id="diagCopy" type="button" style="width:100%">Copiar diagnóstico</button>
+      </details>
       <div class="row" id="discardRow">
         <button class="btn btn-ghost" id="discardBtn" type="button">Gravar de novo</button>
       </div>
@@ -258,7 +263,7 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
 (() => {
   const $ = (id) => document.getElementById(id);
   // A cada versão publicada, este número muda. O app compara com o do site e se atualiza sozinho.
-  const APP_VERSION = '13/10i';
+  const APP_VERSION = '13/10j';
   $('verTxt').textContent = 'versão ' + APP_VERSION + ' · atualiza sozinho';
   const EXAMPLE = `# ABERTURA
 Se você quer começar no *TikTok Shop* e não sabe por onde, presta atenção nesse vídeo.
@@ -279,6 +284,9 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   const prefs = { script: EXAMPLE, speed: 5, size: 32, shade: 55, ph: 42, autoScroll: true, useCountdown: true, flipText: false, fitWhole: false, mirrorRec: true, mirrorView: true, facing: 'user' };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // Qualidade: no iPhone o padrão é 720p (1080p pesa e o iOS chega a cortar a câmera no meio da gravação)
+  if (prefs.hd1080 === undefined) prefs.hd1080 = !IS_IOS;
+  const vidCons = extra => Object.assign({ width: { ideal: prefs.hd1080 ? 1920 : 1280 }, height: { ideal: prefs.hd1080 ? 1080 : 720 }, frameRate: { ideal: 30 } }, extra);
   // iPhone: usa o zoom da própria câmera e grava direto dela (igual o app Câmera: zoom suave e sem perder o fim do vídeo).
   // Montar o vídeo quadro a quadro com zoom digital pesa demais no iPhone e a imagem congelava no final.
   if (IS_IOS && prefs.zoomHwIos !== 'v1') { prefs.zoomHw = true; prefs.zoomHwIos = 'v1'; }
@@ -290,6 +298,8 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   $('script').value = prefs.script;
   ['speed', 'size', 'shade'].forEach(id => $(id).value = prefs[id]);
   ['autoScroll', 'useCountdown', 'flipText', 'fitWhole', 'mirrorRec', 'mirrorView'].forEach(id => $(id).checked = prefs[id]);
+  $('hd1080').checked = !!prefs.hd1080;
+  $('hd1080').addEventListener('change', async () => { if (isRec()) { $('hd1080').checked = !!prefs.hd1080; return; } prefs.hd1080 = $('hd1080').checked; save(); if ($('gate').hidden) await openCamera().catch(() => {}); });
 
   /* ---------- Roteiro ---------- */
   const scroller = $('scroller'), prompt = $('prompt');
@@ -453,7 +463,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     Z.trocando = true;
     const old = stream.getVideoTracks()[0];
     const id = l === 'ultra' ? Z.ultra.deviceId : Z.mainId;
-    const v = { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+    const v = vidCons({ deviceId: { exact: id } });
     let s2 = null;
     try { s2 = await navigator.mediaDevices.getUserMedia({ video: v }); }
     catch (e) {   // alguns celulares não abrem 2 câmeras juntas: solta a atual e tenta de novo
@@ -625,7 +635,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     if (stream) stream.getTracks().forEach(t => t.stop());
     const constraints = {
       // pede a resolução no formato do sensor (deitado) e sem recorte, pra câmera não "dar zoom"
-      video: { facingMode: prefs.facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, resizeMode: 'none' },
+      video: vidCons({ facingMode: prefs.facing, resizeMode: 'none' }),
       audio: { echoCancellation: true, noiseSuppression: true }
     };
     try { stream = await navigator.mediaDevices.getUserMedia(constraints); }
@@ -664,7 +674,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
 
   let wake = null;
   async function lockScreen() { try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (e) {} }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && $('gate').hidden) lockScreen(); });
+  document.addEventListener('visibilitychange', () => { if (isRec()) dlog(document.hidden ? 'app saiu da tela' : 'app voltou pra tela'); if (!document.hidden && $('gate').hidden) lockScreen(); });
 
   /* ---------- Gravação ---------- */
   let recorder = null, chunks = [], recStart = 0, recTimer = 0, blobUrl = null, lastBlob = null, lastName = '';
@@ -1096,13 +1106,14 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   const isRec = () => segPaused || (ativo && recuperando) || (recorder && (recorder.state === 'recording' || recorder.state === 'paused'));
   function novoRecorder() {
     let r;
-    try { r = new MediaRecorder(recSrc, recType ? { mimeType: recType, videoBitsPerSecond: 8000000 } : undefined); }
+    try { r = new MediaRecorder(recSrc, recType ? { mimeType: recType, videoBitsPerSecond: prefs.hd1080 ? 8000000 : 5000000 } : undefined); }
     catch (e) { r = new MediaRecorder(recSrc); }
     const meus = [];
     r.ondataavailable = e => { if (e.data && e.data.size) meus.push(e.data); };
     r._pronto = new Promise(res => { r.onstop = () => { if (meus.length) segs.push(new Blob(meus, { type: (r.mimeType || recType || 'video/mp4').split(';')[0] })); res(); }; });
-    // MP4 (iPhone/Safari): gravar em pedacos de 1 s deixa o video travando nas emendas -> grava inteiro e entrega no fim
-    if ((r.mimeType || recType || '').includes('mp4')) r.start(); else r.start(1000);
+    // entrega em pedacinhos de 1 s: o iPhone não precisa segurar o vídeo inteiro na memória.
+    // (as emendas não aparecem: no fim o mp4Normal reorganiza tudo num MP4 comum)
+    r.start(1000);
     return r;
   }
 
@@ -1121,7 +1132,13 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     micAviso = !audio;
     const src = new MediaStream([...vsrc.getVideoTracks(), ...(audio ? [audio] : [])]);
     segs = []; segPaused = false; recSrc = src; recType = type;
-    recorder = novoRecorder(); ativo = true; ligarVigia();
+    recorder = novoRecorder(); ativo = true;
+    diag = []; recStart = performance.now();
+    dlog(`início · ${IS_IOS ? 'iPhone' : 'outro'} · ${recorder.mimeType || recType} · ${prefs.facing === 'user' ? 'frente' : 'trás'} · ${prefs.hd1080 ? '1080p' : '720p'} pedido`);
+    dlog('câmera: ' + descTrilha(src.getVideoTracks()[0]) + (recCanvas ? ' (gravando pela tela/espelhado)' : ' (direto)'));
+    dlog('microfone: ' + (audio ? (audio.label || 'mesa de som') + ' ' + audio.readyState : 'NENHUM'));
+    vigiarTrilha(stream.getVideoTracks()[0], 'câmera'); if (audio) vigiarTrilha(audio, 'microfone');
+    ligarVigia();
     recStart = performance.now();
     $('recBtn').disabled = false; $('recBtn').classList.add('on'); $('recBtn').setAttribute('aria-label', 'Parar gravação');
     $('app').classList.add('recording');
@@ -1135,22 +1152,37 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
      O iPhone às vezes para de mandar imagem no meio da gravação (a imagem congela e o som segue até o fim).
      Se não chegar quadro novo por 1,2 s, fecha o trecho, reabre a câmera e continua num trecho novo,
      que no fim é emendado igual às pausas. Em vez de perder o resto do vídeo, fica uma falha de ~1 s. */
+  // Diagnóstico: registra o que aconteceu (câmera parou? quantos quadros por segundo? o vigia reabriu?)
+  let diag = [], qConta = 0, qMarco = 0;
+  const dlog = m => { try { diag.push(fmt(recStart ? elapsed() : 0) + '  ' + m); } catch (e) {} };
+  const descTrilha = t => { if (!t) return 'nenhuma'; const st = t.getSettings ? t.getSettings() : {}; return `${st.width || '?'}x${st.height || '?'} ${st.frameRate ? Math.round(st.frameRate) + 'fps' : ''} ${t.readyState}${t.muted ? ' MUDA' : ''}`; };
+  function vigiarTrilha(t, nome) {
+    if (!t || t._diag) return; t._diag = true;
+    ['mute', 'unmute', 'ended'].forEach(ev => t.addEventListener(ev, () => { if (isRec()) dlog(`${nome}: ${ev}`); }));
+  }
   let vigiaInt = 0, ultQuadro = 0, recuperando = false;
   function marcarQuadros() {
     ultQuadro = performance.now();
     if (typeof cam.requestVideoFrameCallback === 'function') {
-      const f = () => { ultQuadro = performance.now(); if (vigiaInt) cam.requestVideoFrameCallback(f); };
+      const f = () => { ultQuadro = performance.now(); qConta++; if (vigiaInt) cam.requestVideoFrameCallback(f); };
       cam.requestVideoFrameCallback(f);
     }
   }
   function ligarVigia() {
     if (!SEG_MODE) return;
     clearInterval(vigiaInt);
+    qConta = 0; qMarco = performance.now();
     vigiaInt = setInterval(() => {
+      const agora = performance.now();
+      if (agora - qMarco >= 5000) {                         // a cada 5 s: quantos quadros a câmera mandou
+        const fps = qConta / ((agora - qMarco) / 1000);
+        if (ativo && !segPaused && typeof cam.requestVideoFrameCallback === 'function' && fps < 24) dlog(`câmera lenta: ${fps.toFixed(1)} quadros/s`);
+        qConta = 0; qMarco = agora;
+      }
       if (!ativo || segPaused || recuperando || document.hidden) { ultQuadro = performance.now(); return; }
       const vt = stream && stream.getVideoTracks()[0];
       const semQuadro = typeof cam.requestVideoFrameCallback === 'function' && performance.now() - ultQuadro > 1200;
-      if (!vt || vt.readyState !== 'live' || vt.muted || semQuadro) recuperar();
+      if (!vt || vt.readyState !== 'live' || vt.muted || semQuadro) { dlog(`câmera parou (${!vt ? 'sem trilha' : vt.readyState !== 'live' ? 'trilha encerrada' : vt.muted ? 'trilha muda' : 'sem quadro novo há ' + ((performance.now() - ultQuadro) / 1000).toFixed(1) + ' s'}) -> reabrindo`); recuperar(); }
     }, 300);
     marcarQuadros();
   }
@@ -1164,8 +1196,9 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
       if (!pelaTela && recorder && recorder.state === 'recording') { r = recorder; r.stop(); }   // salva o trecho até onde tinha imagem
       const velha = stream && stream.getVideoTracks()[0];
       try { velha && velha.stop(); } catch (e) {}
-      const s2 = await navigator.mediaDevices.getUserMedia({ video: { facingMode: prefs.facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } });
+      const s2 = await navigator.mediaDevices.getUserMedia({ video: vidCons({ facingMode: prefs.facing }) });
       const nv = s2.getVideoTracks()[0];
+      vigiarTrilha(nv, 'câmera'); dlog('câmera reaberta: ' + descTrilha(nv));
       stream = new MediaStream([nv, ...stream.getAudioTracks()]);
       cam.srcObject = stream; await cam.play().catch(() => {});
       if (Z.lens === 'main') { Z.track = nv; Z.hwNow = null; render(true); }
@@ -1175,7 +1208,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
         recSrc = new MediaStream([nv, ...(mic && micOk(mic) ? [mic] : [])]);
         if (ativo && !segPaused) recorder = novoRecorder();
       }
-    } catch (e) {}
+    } catch (e) { dlog('falhou ao reabrir a câmera: ' + (e && (e.name || e.message))); }
     recuperando = false;
     marcarQuadros();
   }
@@ -1191,7 +1224,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     if (!recorder) return;
     if (SEG_MODE) {
       if (!segPaused && recorder.state === 'recording') {
-        segPaused = true; recorder.stop();                       // fecha este trecho inteiro (com imagem e som)
+        segPaused = true; recorder.stop(); dlog('pausa');          // fecha este trecho inteiro (com imagem e som)
         pausedAt = performance.now(); stopScroll(); setPauseUI(true);
       } else if (segPaused && !retomando) {
         retomando = true;
@@ -1200,6 +1233,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
           recSrc = new MediaStream([...recSrc.getVideoTracks(), ...a]);
           if (!segPaused) { retomando = false; return; }          // parou enquanto isso
           segPaused = false; recorder = novoRecorder();             // trecho novo, gravador novo
+          dlog('continuou · câmera ' + descTrilha(recSrc.getVideoTracks()[0]));
           retomando = false;
         });
         pausedTotal += performance.now() - pausedAt; pausedAt = 0; setPauseUI(false);
@@ -1217,7 +1251,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   let parando = false;
   async function stopRec() {
     if (parando) return; parando = true;
-    ativo = false; desligarVigia();
+    dlog('parar'); ativo = false; desligarVigia();
     while (recuperando) await new Promise(r => setTimeout(r, 100));   // espera o vigia terminar de reabrir a câmera
     if (pausedAt) { pausedTotal += performance.now() - pausedAt; pausedAt = 0; }
     lastDuration = elapsed();
@@ -1259,6 +1293,11 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     $('preview').src = blobUrl;
     $('dlLink').href = blobUrl; $('dlLink').download = lastName;
     $('doneInfo').textContent = `${fmt(lastDuration)} · ${(lastBlob.size / 1048576).toFixed(1)} MB` + (micAviso ? ' · ⚠ sem som: o microfone não estava liberado' : '');
+    {
+      const resumo = [`trechos gravados: ${segs.length}`, `arquivo: ${(lastBlob.size / 1048576).toFixed(1)} MB · ${lastBlob === segs[0] && segs.length === 1 ? 'formato original' : 'MP4 normal'}`, `versão do app: ${APP_VERSION}`];
+      $('diagTxt').textContent = diag.concat(resumo).join('\n');
+      $('diagBox').open = diag.some(l => /parou|falhou|lenta|ended|mute/.test(l));
+    }
     if (falhouJuntar) {   // não deu pra emendar: entrega cada trecho separado, pra não perder nada
       segUrls.forEach(u => URL.revokeObjectURL(u)); segUrls = segs.map(b => URL.createObjectURL(b));
       $('segLinks').innerHTML = '<div class="hint" style="color:#ff6b6b">Não consegui juntar os trechos. Baixe cada um:</div>' +
@@ -1274,6 +1313,12 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   $('recBtn').addEventListener('click', () => {
     if (swallowClick) { swallowClick = false; return; } // foi arrasto de zoom, não toque
     isRec() ? stopRec() : startRec();
+  });
+  $('diagCopy').addEventListener('click', async () => {
+    const t = $('diagTxt').textContent;
+    try { await navigator.clipboard.writeText(t); $('diagCopy').textContent = 'Copiado! Cole no chat'; }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($('diagTxt')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); $('diagCopy').textContent = 'Selecionado: toque em Copiar'; }
+    setTimeout(() => { $('diagCopy').textContent = 'Copiar diagnóstico'; }, 2500);
   });
   $('shareBtn').addEventListener('click', async () => {
     try { await navigator.share({ files: [new File([lastBlob], lastName, { type: lastBlob.type })] }); } catch (e) {}
