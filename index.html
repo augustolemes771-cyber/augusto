@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Teleprompter M4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Figtree:wght@500;600;700&display=swap">
+<style>
+:root {
+  --accent: #FFD400;
+  --accent-ink: #0B0B0D;
+  --rec: #FF3B4E;
+  --panel: rgba(14, 15, 19, .92);
+  --line: rgba(255, 255, 255, .14);
+  --muted: rgba(255, 255, 255, .62);
+  --f-ui: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-read: "Archivo", Arial, system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden; overscroll-behavior: none; }
+body { font: 15px/1.45 var(--f-ui); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { position: fixed; inset: 0; }
+video#cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+video#cam.mirror { transform: scaleX(-1); }
+
+/* Roteiro por cima da câmera, perto da lente */
+.prompt { position: absolute; left: 0; right: 0; top: 0; height: var(--ph, 42%); padding-top: env(safe-area-inset-top, 0px); background: rgba(0,0,0,var(--shade, .55)); overflow: hidden; }
+.scroller { position: absolute; inset: 0; overflow-y: scroll; scrollbar-width: none; }
+.scroller::-webkit-scrollbar { display: none; }
+.text { padding-inline: 20px; font-family: var(--f-read); font-weight: 700; line-height: 1.3; white-space: pre-wrap; overflow-wrap: break-word; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+.text p { margin: 0 0 .7em; }
+/* cada linha do roteiro como foi digitada: espaços e linhas em branco são mantidos */
+.text .ln { min-height: 1.3em; }
+.text .hl { color: var(--accent); }
+.text .cue { display: block; width: fit-content; font: 700 .45em/1.3 var(--f-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent); border-radius: 6px; padding: .35em .7em; margin: .3em 0 .8em; text-shadow: none; }
+.prompt.flip .text { transform: scaleX(-1); }
+.guide { position: absolute; left: 0; right: 0; pointer-events: none; border-top: 2px solid rgba(255,212,0,.5); border-bottom: 2px solid rgba(255,212,0,.5); background: rgba(255,212,0,.08); }
+.guide::before { content: ""; position: absolute; left: 4px; top: 50%; translate: 0 -50%; border: 8px solid transparent; border-left: 11px solid var(--accent); }
+.prompt .fade { position: absolute; left: 0; right: 0; bottom: 0; height: 28%; pointer-events: none; background: linear-gradient(transparent, rgba(0,0,0,var(--shade, .55))); }
+/* alça discreta: só um tracinho claro; a área de toque continua confortável, mas invisível */
+.resize { position: absolute; left: 50%; bottom: 0; translate: -50% 50%; width: 56px; height: 28px; background: transparent; display: grid; place-items: center; touch-action: none; cursor: ns-resize; z-index: 3; }
+.resize::before { content: ""; width: 32px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.75); box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+
+/* Topo: tempo de gravação */
+.status { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 12px; display: flex; gap: 8px; z-index: 4; pointer-events: none; }
+.pill { background: rgba(0,0,0,.6); border-radius: 99px; padding: 4px 11px; font: 700 14px var(--f-ui); font-variant-numeric: tabular-nums; }
+.pill.rec::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--rec); margin-right: 7px; vertical-align: 0; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+
+.countdown { position: absolute; inset: 0; display: grid; place-items: center; font: 800 34vmin/1 var(--f-read); color: var(--accent); text-shadow: 0 4px 30px rgba(0,0,0,.6); pointer-events: none; z-index: 5; }
+
+/* Barra de baixo */
+.dock { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 18px calc(16px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(transparent, rgba(0,0,0,.75) 40%); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; z-index: 4; }
+.side { display: flex; gap: 10px; align-items: center; }
+.side.right { justify-content: flex-end; }
+.ib { appearance: none; border: 0; width: 48px; height: 48px; border-radius: 50%; background: rgba(30,32,38,.85); display: grid; place-items: center; cursor: pointer; flex: none; }
+.ib:active { transform: scale(.94); }
+.ib[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.rec-btn { appearance: none; width: 78px; height: 78px; border-radius: 50%; border: 4px solid #fff; background: transparent; padding: 0; display: grid; place-items: center; cursor: pointer; }
+.rec-btn span { width: 60px; height: 60px; border-radius: 50%; background: var(--rec); transition: all .2s; }
+.rec-btn.on span { width: 30px; height: 30px; border-radius: 7px; }
+.rec-btn:disabled { opacity: .4; }
+.rec-btn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; position: relative; }
+.rec-btn.zooming { border-color: var(--accent); }
+/* setinhas de "arraste pra cima/baixo" que aparecem ao segurar o botão */
+.rec-btn::before, .rec-btn::after { content: ""; position: absolute; left: 50%; translate: -50% 0; border: 6px solid transparent; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.rec-btn::before { top: -18px; border-bottom: 8px solid var(--accent); }
+.rec-btn::after { bottom: -18px; border-top: 8px solid var(--accent); }
+.rec-btn.zooming::before, .rec-btn.zooming::after { opacity: 1; }
+
+/* Zoom: botões rápidos acima do botão de gravar + indicador grande */
+.zoom-chips { position: absolute; left: 50%; translate: -50% 0; bottom: calc(118px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; padding: 4px; border-radius: 99px; background: rgba(0,0,0,.45); z-index: 4; }
+.zoom-chips button { appearance: none; border: 0; min-width: 38px; height: 38px; padding: 0 8px; border-radius: 99px; background: rgba(30,32,38,.7); color: #fff; font: 700 13px var(--f-ui); font-variant-numeric: tabular-nums; cursor: pointer; touch-action: manipulation; }
+.zoom-chips button.on { background: var(--accent); color: var(--accent-ink); min-width: 46px; font-size: 14px; }
+.zoom-ind { position: absolute; left: 50%; top: 58%; translate: -50% -50%; background: rgba(0,0,0,.65); color: var(--accent); font: 800 28px var(--f-read); font-variant-numeric: tabular-nums; padding: 8px 18px; border-radius: 14px; pointer-events: none; z-index: 6; opacity: 0; transition: opacity .25s; }
+.zoom-ind.show { opacity: 1; transition: none; }
+.zoom-ind small { display: block; font: 600 11px var(--f-ui); color: rgba(255,255,255,.7); text-align: center; letter-spacing: .04em; }
+.toast { position: absolute; left: 50%; translate: -50% 0; bottom: calc(170px + env(safe-area-inset-bottom, 0px)); width: max-content; max-width: calc(100% - 32px); background: rgba(14,15,19,.94); border: 1px solid rgba(255,212,0,.5); border-radius: 12px; padding: 10px 14px; font-size: 13px; text-align: center; z-index: 7; }
+.toast b { color: var(--accent); }
+video#cam { transform-origin: 50% 50%; will-change: transform; }
+.recording #editBtn, .recording #setBtn, .recording #flipBtn, .recording #playBtn { display: none; }
+#pauseBtn { width: 56px; height: 56px; }
+#pauseBtn[aria-pressed="true"] { background: var(--rec); color: #fff; }
+.pill.paused { background: var(--accent); color: var(--accent-ink); }
+
+.spd { display: none; align-items: center; gap: 2px; background: rgba(30,32,38,.85); border-radius: 99px; padding: 4px; }
+.recording .spd { display: inline-flex; }
+.spd button { appearance: none; border: 0; width: 40px; height: 40px; border-radius: 50%; background: transparent; font-size: 22px; font-weight: 700; line-height: 1; cursor: pointer; display: grid; place-items: center; touch-action: manipulation; }
+.spd button:active { background: rgba(255,255,255,.15); }
+.spd button:disabled { opacity: .3; }
+.spd output { min-width: 34px; text-align: center; font: 800 16px var(--f-ui); font-variant-numeric: tabular-nums; display: flex; flex-direction: column; line-height: 1.05; }
+.spd output small { font: 600 9px var(--f-ui); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+
+/* Painéis (roteiro, ajustes, vídeo pronto) */
+.sheet-wrap { position: absolute; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
+.sheet { width: min(640px, 100%); max-height: 88%; overflow: auto; background: #121318; border-radius: 18px 18px 0 0; border: 1px solid var(--line); border-bottom: 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 14px; }
+.sheet h2 { margin: 0; font: 800 19px var(--f-read); }
+.sheet .head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.hint { font-size: 13px; color: var(--muted); }
+.hint code { background: rgba(255,255,255,.1); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+textarea#script { width: 100%; min-height: 40vh; resize: vertical; background: #0B0C0F; border: 1px solid var(--line); border-radius: 12px; padding: 14px; font: 16px/1.55 var(--f-ui); }
+textarea#script:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.btn { appearance: none; border: 0; border-radius: 12px; padding: 13px 18px; font-weight: 700; font-size: 15px; cursor: pointer; text-align: center; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-ghost { background: rgba(255,255,255,.1); color: #fff; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > .btn { flex: 1; }
+.ctl { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 10px; }
+.ctl label { font-size: 14px; color: var(--muted); }
+.ctl output { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ctl input { width: 100%; accent-color: var(--accent); }
+.toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; }
+.toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
+video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: #000; }
+
+/* Tela de permissão / erro */
+.gate { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; background: radial-gradient(circle at 80% 10%, rgba(255,212,0,.18), transparent 50%), #0B0C0F; z-index: 20; }
+.gate-inner { max-width: 380px; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+.gate .mark { width: 52px; height: 52px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font: 800 20px var(--f-read); }
+.gate h1 { margin: 0; font: 800 26px/1.15 var(--f-read); }
+.gate p { margin: 0; color: var(--muted); }
+.gate .err { color: #FF8A80; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <video id="cam" playsinline autoplay muted></video>
+
+  <div class="prompt" id="prompt">
+    <div class="scroller" id="scroller"><div class="text" id="text"></div></div>
+    <div class="guide" id="guide"></div>
+    <div class="fade"></div>
+    <div class="resize" id="resize" title="Arraste pra mudar a altura do roteiro"></div>
+  </div>
+
+  <div class="status">
+    <span class="pill" id="recPill" hidden>0:00</span>
+  </div>
+  <div class="countdown" id="countdown" hidden>3</div>
+  <div class="zoom-ind" id="zoomInd" aria-live="polite">1.0x</div>
+  <div class="zoom-chips" id="zoomChips" role="group" aria-label="Zoom" hidden></div>
+  <div class="toast" id="updTip" hidden style="bottom:auto;top:calc(env(safe-area-inset-top,0px) + 56px)">Versão nova disponível · <b>toque pra atualizar</b></div>
+  <div class="toast" id="zoomTip" hidden>Zoom: <b>arraste o botão vermelho pra cima/baixo</b>, faça <b>pinça</b> na tela ou <b>toque 2x</b> na imagem</div>
+
+  <div class="dock">
+    <div class="side">
+      <button class="ib" id="pauseBtn" type="button" aria-label="Pausar gravação" aria-pressed="false" hidden>
+        <svg id="icoPauseRec" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>
+        <svg id="icoResumeRec" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" hidden><circle cx="12" cy="12" r="7"/></svg>
+      </button>
+      <button class="ib" id="editBtn" type="button" aria-label="Editar roteiro">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>
+      </button>
+      <button class="ib" id="setBtn" type="button" aria-label="Ajustes">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
+    </div>
+    <button class="rec-btn" id="recBtn" type="button" aria-label="Gravar"><span></span></button>
+    <div class="side right">
+      <div class="spd" role="group" aria-label="Velocidade do texto">
+        <button type="button" id="spdDown" aria-label="Diminuir velocidade">−</button>
+        <output id="spdVal" aria-live="polite"><span id="spdNum">5</span><small>vel.</small></output>
+        <button type="button" id="spdUp" aria-label="Aumentar velocidade">+</button>
+      </div>
+      <button class="ib" id="playBtn" type="button" aria-label="Rolar roteiro">
+        <svg id="icoPlay" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>
+        <svg id="icoPause" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" hidden><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>
+      </button>
+      <button class="ib" id="flipBtn" type="button" aria-label="Trocar câmera">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Roteiro -->
+  <div class="sheet-wrap" id="editSheet" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="editTitle">
+      <div class="head"><h2 id="editTitle">Roteiro</h2><span class="hint" id="est"></span></div>
+      <textarea id="script" spellcheck="true"></textarea>
+      <div class="hint">Palavras entre <code>*asteriscos*</code> ficam amarelas. Linha começando com <code>#</code> vira marcação de cena.</div>
+      <div class="row">
+        <button class="btn btn-ghost" id="exampleBtn" type="button">Exemplo</button>
+        <button class="btn btn-primary" id="editDone" type="button">Pronto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ajustes -->
+  <div class="sheet-wrap" id="setSheet" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="setTitle">
+      <h2 id="setTitle">Ajustes</h2>
+      <div class="ctl"><label for="speed">Velocidade</label><input type="range" id="speed" min="1" max="20" value="5"><output id="speedOut">5</output></div>
+      <div class="ctl"><label for="size">Letra</label><input type="range" id="size" min="20" max="72" value="32"><output id="sizeOut">32</output></div>
+      <div class="ctl"><label for="shade">Fundo escuro</label><input type="range" id="shade" min="0" max="90" value="55"><output id="shadeOut">55%</output></div>
+      <label class="toggle">Começar a rolar quando gravar <input type="checkbox" id="autoScroll" checked></label>
+      <label class="toggle">Contagem de 3 segundos antes de gravar <input type="checkbox" id="useCountdown" checked></label>
+      <div class="ctl" id="zoomRow"><label for="zoom">Zoom</label><input type="range" id="zoom" min="1" max="4" step="0.05" value="1"><output id="zoomOut">1.0x</output></div>
+      <label class="toggle" id="hwRow" hidden>Usar o zoom da própria câmera (mais nítido, mas menos suave) <input type="checkbox" id="zoomHw"></label>
+      <div class="hint" id="semUltra" hidden>O 0.5x só aparece quando o navegador libera a lente ultra-angular do celular (normalmente na câmera de trás). A câmera da frente quase nunca tem.</div>
+      <div class="hint" id="zoomHelp">Durante a gravação: arraste o botão de gravar pra cima (aproxima) ou pra baixo (afasta), faça pinça com 2 dedos na tela, toque 2x na imagem ou use os botões 1x / 2x acima do botão de gravar.</div>
+      <label class="toggle">Mostrar a imagem inteira da câmera (sem cortar) <input type="checkbox" id="fitWhole"></label>
+      <label class="toggle">Espelhar a imagem na tela (câmera da frente) <input type="checkbox" id="mirrorView"></label>
+      <label class="toggle">Gravar o vídeo espelhado, igual à prévia (câmera da frente) <input type="checkbox" id="mirrorRec"></label>
+      <div class="hint" id="mirrorIosHint" hidden>No iPhone, gravar espelhado pode fazer a imagem travar (principalmente com pausas ou zoom). Deixe desligado: o vídeo sai igual ao app Câmera.</div>
+      <label class="toggle">Espelhar texto (vidro de teleprompter) <input type="checkbox" id="flipText"></label>
+      <button class="btn btn-primary" id="setDone" type="button">Fechar</button>
+    </div>
+  </div>
+
+  <!-- Vídeo pronto -->
+  <div class="sheet-wrap" id="doneSheet" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="doneTitle">
+      <div class="head"><h2 id="doneTitle">Vídeo gravado</h2><span class="hint" id="doneInfo"></span></div>
+      <video id="preview" controls playsinline></video>
+      <div class="row">
+        <button class="btn btn-primary" id="shareBtn" type="button" hidden>Salvar / compartilhar</button>
+        <a class="btn btn-primary" id="dlLink" href="#" download="video.mp4">Baixar vídeo</a>
+      </div>
+      <div class="row" id="segLinks" hidden></div>
+      <div class="row" id="discardRow">
+        <button class="btn btn-ghost" id="discardBtn" type="button">Gravar de novo</button>
+      </div>
+      <div id="discardAsk" hidden>
+        <div class="hint" style="text-align:center;margin:4px 0 8px;color:#ff6b6b;font-weight:600">Apagar este vídeo e gravar de novo? Se ainda não salvou, ele será perdido.</div>
+        <div class="row">
+          <button class="btn btn-ghost" id="discardNo" type="button">Cancelar</button>
+          <button class="btn btn-primary" id="discardYes" type="button" style="background:#e5484d;color:#fff">Sim, gravar de novo</button>
+        </div>
+      </div>
+      <div class="hint">No iPhone, use “Salvar / compartilhar” e escolha “Salvar vídeo” pra mandar pra galeria.</div>
+    </div>
+  </div>
+
+  <!-- Entrada -->
+  <div class="gate" id="gate">
+    <div class="gate-inner">
+      <div class="mark">M4</div>
+      <h1>Teleprompter com câmera</h1>
+      <p>O roteiro rola por cima da câmera, perto da lente, enquanto você grava.</p>
+      <button class="btn btn-primary" id="startCam" type="button">Abrir câmera</button>
+      <p class="err" id="camErr" hidden></p>
+      <p style="opacity:.45;font-size:12px;margin-top:18px" id="verTxt"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  // A cada versão publicada, este número muda. O app compara com o do site e se atualiza sozinho.
+  const APP_VERSION = '13/10g';
+  $('verTxt').textContent = 'versão ' + APP_VERSION + ' · atualiza sozinho';
+  const EXAMPLE = `# ABERTURA
+Se você quer começar no *TikTok Shop* e não sabe por onde, presta atenção nesse vídeo.
+
+Esse é o episódio 1 da série *do 0 aos 10 mil*. Eu vou mostrar exatamente o que fazer no primeiro mês.
+
+# PASSO 1
+Primeiro: escolha um nicho que você entende. Fica muito mais fácil vender o que você usa.
+
+# PASSO 2
+Segundo: faça live todo dia, mesmo com pouca gente assistindo. Quem vê o produto ao vivo compra com mais confiança.
+
+# FECHAMENTO
+Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maior dúvida pra começar.`;
+
+  /* ---------- Preferências ---------- */
+  const KEY = 'teleprompter-camera-m4';
+  const prefs = { script: EXAMPLE, speed: 5, size: 32, shade: 55, ph: 42, autoScroll: true, useCountdown: true, flipText: false, fitWhole: false, mirrorRec: true, mirrorView: true, facing: 'user' };
+  try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+  const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // iPhone: usa o zoom da própria câmera e grava direto dela (igual o app Câmera: zoom suave e sem perder o fim do vídeo).
+  // Montar o vídeo quadro a quadro com zoom digital pesa demais no iPhone e a imagem congelava no final.
+  if (IS_IOS && prefs.zoomHwIos !== 'v1') { prefs.zoomHw = true; prefs.zoomHwIos = 'v1'; }
+  // iPhone: gravar espelhado obriga a montar o vídeo quadro a quadro, e com pausas a imagem congelava (só o áudio seguia).
+  // Desliga uma vez; a prévia na tela continua espelhada. Quem quiser pode religar nos Ajustes.
+  if (IS_IOS && prefs.mirrorRecIos !== 'v1') { prefs.mirrorRec = false; prefs.mirrorRecIos = 'v1'; try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch (e) {} }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch (e) {} };
+
+  $('script').value = prefs.script;
+  ['speed', 'size', 'shade'].forEach(id => $(id).value = prefs[id]);
+  ['autoScroll', 'useCountdown', 'flipText', 'fitWhole', 'mirrorRec', 'mirrorView'].forEach(id => $(id).checked = prefs[id]);
+
+  /* ---------- Roteiro ---------- */
+  const scroller = $('scroller'), prompt = $('prompt');
+  const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function build() {
+    // linha por linha, do jeito que foi digitado: espaços, recuos e linhas em branco ficam iguais na tela
+    const src = prefs.script.replace(/\r/g, '').replace(/\t/g, '    ');
+    const html = src.trim() ? src.split('\n').map(line => {
+      const t = line.trim();
+      if (t.startsWith('#')) return `<span class="cue">${esc(t.replace(/^#+\s*/, ''))}</span>`;
+      return `<div class="ln">${esc(line).replace(/\*([^*\n]+)\*/g, '<span class="hl">$1</span>')}</div>`;
+    }).join('') : '';
+    $('text').innerHTML = html || '<p>Toque no lápis pra escrever o roteiro.</p>';
+    layout();
+  }
+  function layout() {
+    const size = +prefs.size;
+    prompt.style.setProperty('--ph', prefs.ph + '%');
+    prompt.style.setProperty('--shade', prefs.shade / 100);
+    prompt.classList.toggle('flip', prefs.flipText);
+    const t = $('text');
+    t.style.fontSize = size + 'px';
+    const h = scroller.clientHeight;
+    const top = Math.round(h * .22);
+    t.style.paddingTop = top + 'px';
+    t.style.paddingBottom = (h - top) + 'px';
+    $('guide').style.top = (top - size * .15) + 'px';
+    $('guide').style.height = (size * 1.3 + size * .3) + 'px';
+    $('speedOut').textContent = prefs.speed; if ($('spdNum')) syncSpd();
+    $('sizeOut').textContent = size;
+    $('shadeOut').textContent = prefs.shade + '%';
+  }
+  function estimate() {
+    const w = prefs.script.replace(/^#.*$/gm, '').replace(/\*/g, '').split(/\s+/).filter(Boolean).length;
+    const s = Math.round(w / 150 * 60);
+    $('est').textContent = `${w} palavras · ~${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  /* ---------- Rolagem ---------- */
+  let scrolling = false, pos = 0, last = 0, raf = 0, stoppedByTouchAt = 0;
+  const pxPerSec = () => prefs.speed * 7 * (prefs.size / 32);
+  function tick(now) {
+    if (!scrolling) return;
+    const dt = Math.min(.1, (now - last) / 1000); last = now;
+    pos += pxPerSec() * dt;
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    if (pos >= max) { pos = max; stopScroll(); }
+    scroller.scrollTop = pos;
+    raf = requestAnimationFrame(tick);
+  }
+  function startScroll() {
+    if (scrolling) return;
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    if (scroller.scrollTop >= max - 2) scroller.scrollTop = 0;
+    pos = scroller.scrollTop; scrolling = true; last = performance.now();
+    raf = requestAnimationFrame(tick); playUI();
+  }
+  function stopScroll() { scrolling = false; cancelAnimationFrame(raf); playUI(); }
+  function playUI() { $('icoPlay').hidden = scrolling; $('icoPause').hidden = !scrolling; }
+  scroller.addEventListener('scroll', () => { if (!scrolling) pos = scroller.scrollTop; });
+  scroller.addEventListener('touchstart', e => { if (scrolling && e.touches.length === 1) { stopScroll(); stoppedByTouchAt = performance.now(); } }, { passive: true });
+  scroller.addEventListener('click', () => scrolling ? stopScroll() : startScroll());
+  $('playBtn').addEventListener('click', () => scrolling ? stopScroll() : startScroll());
+
+  // Arrastar pra mudar a altura do roteiro
+  (() => {
+    const handle = $('resize'); let dragging = false;
+    handle.addEventListener('pointerdown', e => { dragging = true; handle.setPointerCapture(e.pointerId); });
+    handle.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      prefs.ph = Math.round(Math.min(80, Math.max(20, e.clientY / window.innerHeight * 100)));
+      layout();
+    });
+    const end = () => { if (dragging) { dragging = false; save(); } };
+    handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  })();
+
+  /* ---------- Câmera ---------- */
+  const cam = $('cam');
+  let stream = null;
+  function applyFit() { cam.style.objectFit = prefs.fitWhole ? 'contain' : 'cover'; }
+  /* ---------- Zoom ----------
+     Zoom suave: os gestos só mudam o "alvo"; a cada quadro (60x por segundo) o zoom anda até o alvo
+     com uma mola amortecida — começa devagar, acelera e freia no final, sem degraus.
+     Por padrão é zoom digital (amplia a prévia e recorta o centro no vídeo gravado), que é o mais suave.
+     Nos Ajustes dá pra usar o zoom da própria câmera (mais nítido, mas o Android aplica aos saltos). */
+  const Z = { cur: 1, target: 1, vel: 0, w: 10, min: 1, max: 4, cap: null, useHw: false, track: null, digital: 1,
+              hwNow: null, ultra: null, mainId: null, lens: 'main', want: 'main', trocando: false };
+  const ULTRA = 0.5;   // a lente ultra-angular mostra o dobro do campo da principal
+  const clampZ = v => Math.min(Z.max, Math.max(Z.min, v));
+  const SUAVE = 9, RAPIDO = 20;      // rigidez da mola: botões/toque duplo (curva longa) x dedos (segue o dedo, sem tremer)
+  let hwBusy = false, hwWant = null;
+  function hwApply(v) {
+    hwWant = v; if (hwBusy || !Z.track) return;
+    hwBusy = true;
+    const go = () => {
+      const t = hwWant; hwWant = null;
+      // manda o próximo valor assim que a câmera termina o anterior (o vigia da gravação cuida de qualquer engasgo)
+      Z.track.applyConstraints({ advanced: [{ zoom: t }] }).catch(() => {}).finally(() => { if (hwWant != null) go(); else hwBusy = false; });
+    };
+    go();
+  }
+  function applyView() {
+    const m = prefs.facing === 'user' && prefs.mirrorView !== false;
+    cam.classList.toggle('mirror', m);
+    cam.style.transform = `${m ? 'scaleX(-1) ' : ''}scale(${Z.digital.toFixed(4)}) translateZ(0)`;
+  }
+  let indT = 0, indTxt = '', uiTxt = '';
+  function showInd() {
+    const ind = $('zoomInd');
+    const txt = Z.cur.toFixed(1) + 'x' + (!Z.useHw && Z.cur > 1.01 ? '<small>zoom digital</small>' : '');
+    if (txt !== indTxt) { ind.innerHTML = indTxt = txt; }
+    ind.classList.add('show'); clearTimeout(indT);
+    indT = setTimeout(() => ind.classList.remove('show'), 900);
+  }
+  const rotulo = v => v < 1 ? '.' + Math.round(v * 10) : String(v);
+  function syncZoomUI() {
+    const txt = Z.cur.toFixed(1);
+    if (txt === uiTxt) return; uiTxt = txt;          // só mexe na tela quando o número muda
+    if (document.activeElement !== $('zoom')) $('zoom').value = Z.cur;
+    $('zoomOut').textContent = txt + 'x';
+    const btns = [...$('zoomChips').children];
+    // o botão mais próximo (abaixo) do zoom atual acende e mostra o valor exato, igual câmera de celular
+    let act = null;
+    btns.forEach(b => { if (+b.dataset.z <= Z.cur + 0.05) act = b; });
+    btns.forEach(b => {
+      const on = b === act, v = +b.dataset.z;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.textContent = on ? (Math.abs(Z.cur - v) < 0.05 ? rotulo(v) : txt.replace(/\.0$/, '')) + 'x' : rotulo(v);
+    });
+  }
+  function hwSet(v) {
+    if (Z.hwNow != null && Math.abs(v - Z.hwNow) < 0.004) return;
+    Z.hwNow = v; hwApply(v);
+  }
+  function render(quiet) {
+    const z = Z.cur, c = Z.cap;
+    const hwBaixo = c && c.min < 0.99;               // a propria camera ja vai abaixo de 1x (ultra-angular embutida)
+    if (z < 0.999 && !hwBaixo && Z.ultra && !IS_IOS) {           // 0.5x: troca pra lente ultra-angular
+      querLente('ultra');
+      Z.digital = Z.lens === 'ultra' ? Math.max(1, z / ULTRA) : 1;
+    } else {
+      querLente('main');
+      if (Z.lens === 'ultra') Z.digital = Math.max(1, z / ULTRA);       // ainda trocando de lente
+      else if (c && Z.track) {
+        const hw = Z.useHw ? Math.min(Math.max(z, c.min), c.max) : Math.min(Math.max(z, c.min), Math.max(1, c.min));
+        hwSet(hw); Z.digital = Math.max(1, z / hw);
+      } else Z.digital = Math.max(1, z);
+    }
+    applyView(); syncZoomUI();
+    if (!quiet) showInd();
+  }
+  // troca de lente (principal <-> ultra-angular) sem parar a gravação: o vídeo gravado sai do canvas
+  function querLente(l) {
+    Z.want = l;
+    if (Z.trocando || Z.lens === l || (l === 'ultra' && !Z.ultra)) return;
+    trocarLente(l);
+  }
+  async function trocarLente(l) {
+    Z.trocando = true;
+    const old = stream.getVideoTracks()[0];
+    const id = l === 'ultra' ? Z.ultra.deviceId : Z.mainId;
+    const v = { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+    let s2 = null;
+    try { s2 = await navigator.mediaDevices.getUserMedia({ video: v }); }
+    catch (e) {   // alguns celulares não abrem 2 câmeras juntas: solta a atual e tenta de novo
+      try { old && old.stop(); s2 = await navigator.mediaDevices.getUserMedia({ video: v }); } catch (e2) { s2 = null; }
+    }
+    if (s2) {
+      const nt = s2.getVideoTracks()[0];
+      if (old && old !== nt) old.stop();
+      stream = new MediaStream([nt, ...stream.getAudioTracks()]);
+      cam.srcObject = stream; await cam.play().catch(() => {});
+      Z.lens = l;
+      Z.track = l === 'main' ? nt : null; Z.hwNow = null;
+      garantirMic();                       // no iPhone, abrir a outra camera as vezes derruba o microfone
+    } else {
+      if (l === 'ultra') { Z.ultra = null; configLimites(); }      // não deu: some o 0.5x
+      if (old && old.readyState === 'ended') { await openCamera().catch(() => {}); }
+    }
+    Z.trocando = false;
+    render(true);
+    if (Z.want !== Z.lens && !(Z.want === 'ultra' && !Z.ultra)) querLente(Z.want);
+  }
+  async function acharUltra() {
+    Z.ultra = null;
+    try {
+      const cur = stream.getVideoTracks()[0];
+      Z.mainId = (cur.getSettings && cur.getSettings().deviceId) || null;
+      if (!Z.mainId || !navigator.mediaDevices.enumerateDevices) return;
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const lab = (devs.find(d => d.deviceId === Z.mainId) || {}).label || cur.label || '';
+      const frente = t => /front|frontal|frente|selfie|facing front/i.test(t);
+      Z.ultra = devs.find(d => d.deviceId !== Z.mainId && /ultra|grande[- ]?angular|0[.,]5x?\b/i.test(d.label) && frente(d.label) === frente(lab)) || null;
+    } catch (e) { Z.ultra = null; }
+  }
+  // mola criticamente amortecida, em escala logarítmica (2x->4x parece igual a 1x->2x)
+  let zRaf = 0, zLast = 0;
+  function zoomLoop(now) {
+    const dt = Math.min(0.05, (now - zLast) / 1000 || 0.016); zLast = now;
+    const x = Math.log(Z.cur), xt = Math.log(Z.target), w = Z.w;
+    Z.vel += (w * w * (xt - x) - 2 * w * Z.vel) * dt;
+    let nx = x + Z.vel * dt;
+    if (Math.abs(xt - nx) < 0.0008 && Math.abs(Z.vel) < 0.004) { nx = xt; Z.vel = 0; }
+    Z.cur = Math.exp(nx);
+    render();
+    zRaf = nx === xt ? 0 : requestAnimationFrame(zoomLoop);
+  }
+  function aim(v, w) {
+    Z.target = clampZ(+v || Z.min); Z.w = w;
+    if (!zRaf) { zLast = performance.now(); zRaf = requestAnimationFrame(zoomLoop); }
+  }
+  const zoomTo = v => aim(v, SUAVE);          // botões, toque duplo, teclado: curva suave
+  const zoomGesture = v => aim(v, RAPIDO);    // dedo arrastando / pinça: acompanha o dedo, mas sem degraus
+  function jumpZoom(v) { cancelAnimationFrame(zRaf); zRaf = 0; Z.vel = 0; Z.cur = Z.target = clampZ(v); uiTxt = ''; render(true); }
+  function buildChips() {
+    const base = [Z.min < 0.95 ? Z.min : null, 1, 1.5, 2, 3, Z.useHw && Z.max >= 5 ? 5 : null].filter(v => v != null && v >= Z.min - 0.01 && v <= Z.max + 0.01);
+    const vals = [...new Set(base.map(v => Math.round(v * 10) / 10))];
+    $('zoomChips').innerHTML = vals.map(v => `<button type="button" data-z="${v}" aria-label="Zoom ${v}x">${rotulo(v)}</button>`).join('');
+    $('zoomChips').hidden = vals.length < 2;
+    uiTxt = '';
+  }
+  $('zoomChips').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    zoomTo(+b.dataset.z);
+  });
+  function configLimites() {
+    const c = Z.cap;
+    Z.useHw = !!(c && prefs.zoomHw && c.max >= 2);      // câmera sem zoom de verdade: fica no digital
+    const ultraOk = Z.ultra && !IS_IOS;     // iPhone: sem troca de lente (derruba a gravação direta)
+    const baixo = c && c.min < 0.99 ? Math.max(0.5, c.min) : (ultraOk ? ULTRA : 1);
+    Z.min = Z.useHw ? Math.min(c.min, baixo) : baixo;
+    Z.max = Z.useHw ? Math.min(c.max, 10) : 4;
+    if (IS_IOS && !Z.useHw) { Z.min = 1; Z.max = 1; }     // iPhone sem zoom da câmera: sem zoom (o digital exigiria montar o vídeo e travava)
+    $('zoom').min = Z.min; $('zoom').max = Z.max; $('zoom').step = 0.01;
+    $('hwRow').hidden = !c;
+    $('semUltra').hidden = Z.min < 0.99;
+    buildChips();
+    Z.target = clampZ(Z.target); Z.cur = clampZ(Z.cur);
+  }
+  function configZoom() {
+    configLimites();
+    Z.hwNow = null;
+    jumpZoom(Math.min(Z.max, Math.max(Z.min, 1)));      // abre sempre em 1x
+  }
+  function setupZoom() {
+    const track = stream && stream.getVideoTracks()[0];
+    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    Z.track = track || null; Z.lens = Z.want = 'main'; Z.trocando = false;
+    Z.cap = caps.zoom && caps.zoom.max > caps.zoom.min ? caps.zoom : null;
+    configZoom();
+    acharUltra().then(() => { if (Z.ultra) { configLimites(); uiTxt = ''; syncZoomUI(); } });
+    if (!prefs.zoomTipSeen) {
+      prefs.zoomTipSeen = true; save();
+      $('zoomTip').hidden = false; setTimeout(() => { $('zoomTip').hidden = true; }, 6000);
+    }
+  }
+  $('zoomHw').checked = !!prefs.zoomHw;
+  $('mirrorIosHint').hidden = !IS_IOS;
+  $('zoomHw').addEventListener('change', () => { if (isRec()) { $('zoomHw').checked = !!prefs.zoomHw; return; } prefs.zoomHw = $('zoomHw').checked; save(); configZoom(); });
+  $('zoomTip').addEventListener('click', () => { $('zoomTip').hidden = true; });
+  $('zoom').addEventListener('input', () => aim(+$('zoom').value, 16));
+
+  // 1) Arrastar o botão de gravar pra cima/baixo (igual câmera do celular). Toque rápido continua gravando/parando.
+  let recDrag = null, swallowClick = false;
+  const rb = $('recBtn');
+  rb.addEventListener('pointerdown', e => {
+    swallowClick = false;
+    if (rb.disabled) return;
+    recDrag = { y: e.clientY, x: e.clientX, z: Z.target, on: false, id: e.pointerId };
+    try { rb.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  rb.addEventListener('pointermove', e => {
+    if (!recDrag || e.pointerId !== recDrag.id) return;
+    const dy = recDrag.y - e.clientY, dx = e.clientX - recDrag.x;
+    if (!recDrag.on && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { recDrag.on = true; recDrag.y = e.clientY; recDrag.z = Z.target; rb.classList.add('zooming'); $('zoomTip').hidden = true; return; }
+    if (recDrag.on) {
+      e.preventDefault();
+      // cada ~130px pra cima dobra o zoom
+      zoomGesture(recDrag.z * Math.pow(2, (recDrag.y - e.clientY) / 130));
+    }
+  });
+  const endRecDrag = e => {
+    if (!recDrag) return;
+    if (recDrag.on) swallowClick = true;
+    recDrag = null; rb.classList.remove('zooming');
+  };
+  rb.addEventListener('pointerup', endRecDrag);
+  rb.addEventListener('pointercancel', endRecDrag);
+  rb.addEventListener('contextmenu', e => e.preventDefault());
+
+  // 2) Pinça com 2 dedos em qualquer lugar da tela (inclusive em cima do roteiro)
+  const sheetOpen = () => !$('gate').hidden || [...document.querySelectorAll('.sheet-wrap')].some(w => !w.hidden);
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  let pinch = null, lastPinchAt = 0;
+  document.addEventListener('touchstart', e => {
+    if (e.touches.length === 2 && !sheetOpen()) {
+      pinch = { d: dist(e.touches) || 1, z: Z.target };
+      // o 1º dedo pode ter pausado a rolagem do roteiro sem querer: retoma
+      if (performance.now() - stoppedByTouchAt < 600 && isRec() && recorder.state === 'recording') startScroll();
+      $('zoomTip').hidden = true;
+      e.preventDefault();
+    }
+  }, { passive: false });
+  document.addEventListener('touchmove', e => {
+    if (pinch && e.touches.length === 2) { e.preventDefault(); lastPinchAt = performance.now(); zoomGesture(pinch.z * dist(e.touches) / pinch.d); }
+  }, { passive: false });
+  document.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
+  document.addEventListener('touchcancel', () => { pinch = null; });
+  // Safari: impede o zoom da página
+  ['gesturestart', 'gesturechange'].forEach(ev => document.addEventListener(ev, e => e.preventDefault()));
+
+  // 3) Toque duplo na imagem: alterna 1x <-> 2x
+  let lastTap = { t: 0, x: 0, y: 0 };
+  cam.addEventListener('pointerup', e => {
+    const now = performance.now();
+    if (pinch || now - lastPinchAt < 500) { lastTap.t = 0; return; }
+    if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      zoomTo(Z.target > Math.max(1, Z.min) + 0.05 ? Z.min : Math.min(2, Z.max));
+      lastTap.t = 0;
+    } else lastTap = { t: now, x: e.clientX, y: e.clientY };
+  });
+
+  // 4) Teclado (computador): + e −
+  document.addEventListener('keydown', e => {
+    if (sheetOpen() || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === '+' || e.key === '=') zoomTo(Z.target * 1.25);
+    else if (e.key === '-' || e.key === '_') zoomTo(Z.target / 1.25);
+    else if (e.key === '0') zoomTo(Z.min);
+  });
+  async function openCamera() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    const constraints = {
+      // pede a resolução no formato do sensor (deitado) e sem recorte, pra câmera não "dar zoom"
+      video: { facingMode: prefs.facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, resizeMode: 'none' },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    };
+    try { stream = await navigator.mediaDevices.getUserMedia(constraints); }
+    catch (e) {
+      if (e && e.name === 'NotAllowedError') throw e;
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: prefs.facing }, audio: true });
+    }
+    cam.srcObject = stream;
+    applyMirror();
+    applyFit();
+    await cam.play().catch(() => {});
+    setupZoom();
+  }
+  $('startCam').addEventListener('click', async () => {
+    const err = $('camErr'); err.hidden = true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      err.textContent = 'Esse navegador não deu acesso à câmera. Abra o link pelo Safari (iPhone) ou Chrome (Android), e confira se o endereço começa com https://.';
+      err.hidden = false; return;
+    }
+    try {
+      await openCamera();
+      $('gate').hidden = true;
+      build(); lockScreen();
+    } catch (e) {
+      err.textContent = e && e.name === 'NotAllowedError'
+        ? 'A permissão da câmera foi negada. Libere câmera e microfone nas configurações do navegador pra este site e toque de novo.'
+        : 'Não consegui abrir a câmera. Feche outros apps que estejam usando a câmera e tente de novo.';
+      err.hidden = false;
+    }
+  });
+  $('flipBtn').addEventListener('click', async () => {
+    if (isRec()) return;
+    prefs.facing = prefs.facing === 'user' ? 'environment' : 'user'; save();
+    try { await openCamera(); } catch (e) { prefs.facing = prefs.facing === 'user' ? 'environment' : 'user'; save(); await openCamera().catch(() => {}); }
+  });
+
+  let wake = null;
+  async function lockScreen() { try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (e) {} }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && $('gate').hidden) lockScreen(); });
+
+  /* ---------- Gravação ---------- */
+  let recorder = null, chunks = [], recStart = 0, recTimer = 0, blobUrl = null, lastBlob = null, lastName = '';
+  function pickType() {
+    const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    if (!window.MediaRecorder) return null;
+    return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  }
+  const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+
+  function countdown() {
+    return new Promise(res => {
+      if (!prefs.useCountdown) return res();
+      let n = 3; const cd = $('countdown'); cd.textContent = n; cd.hidden = false;
+      const iv = setInterval(() => { n--; if (n <= 0) { clearInterval(iv); cd.hidden = true; res(); } else cd.textContent = n; }, 900);
+    });
+  }
+
+  /* ---------- Áudio: nunca gravar mudo ----------
+     O iPhone derruba/silencia o microfone quando a lente troca, quando sai e volta pro app, ou numa notificação.
+     Antes de gravar confere o microfone (pega de novo se caiu) e grava o áudio por uma "mesa de som" (WebAudio):
+     se o microfone cair no meio, liga o novo na mesma mesa e o vídeo continua com som. */
+  let AC = null, acDest = null, acSrc = null, micAviso = false;
+  const micOk = t => t && t.readyState === 'live' && !t.muted;
+  async function garantirMic() {
+    const a = stream && stream.getAudioTracks()[0];
+    if (micOk(a)) { ligarNaMesa(a); return a; }
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const na = s.getAudioTracks()[0];
+      if (!na) return null;
+      if (a) { try { stream.removeTrack(a); a.stop(); } catch (e) {} }
+      stream.addTrack(na); vigiarMic(na); ligarNaMesa(na);
+      return na;
+    } catch (e) { return null; }
+  }
+  function vigiarMic(t) {
+    if (!t || t._vigiado) return; t._vigiado = true;
+    t.addEventListener('ended', () => { if (isRec()) garantirMic(); });
+    t.addEventListener('unmute', () => ligarNaMesa(t));
+  }
+  function ligarNaMesa(t) {
+    if (!AC || !acDest || !t) return;
+    try { acSrc && acSrc.disconnect(); } catch (e) {}
+    try { acSrc = AC.createMediaStreamSource(new MediaStream([t])); acSrc.connect(acDest); } catch (e) {}
+    if (AC.state !== 'running') AC.resume().catch(() => {});
+  }
+  function mesaDeSom() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx || !(Ctx.prototype && Ctx.prototype.createMediaStreamDestination)) return null;
+    try {
+      if (!AC) {
+        AC = new Ctx();
+        AC.addEventListener('statechange', () => { if (AC.state !== 'running' && isRec()) AC.resume().catch(() => {}); });
+      }
+      AC.resume().catch(() => {});
+      acDest = AC.createMediaStreamDestination();
+      const a = stream.getAudioTracks()[0];
+      if (a) { vigiarMic(a); ligarNaMesa(a); }
+      return acDest.stream.getAudioTracks()[0] || null;
+    } catch (e) { return null; }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && AC && AC.state !== 'running') AC.resume().catch(() => {}); });
+
+  // Gravação pelo canvas: espelha (igual à prévia) e aplica o zoom digital recortando o centro
+  let recCanvas = null, drawRaf = 0, recWatch = 0, pausedTotal = 0, pausedAt = 0;
+  function recordingStream() {
+    const vw = cam.videoWidth, vh = cam.videoHeight;
+    const mirror = prefs.facing === 'user' && prefs.mirrorRec;
+    // com zoom da própria câmera e sem espelho, grava direto (melhor qualidade)
+    if ((!mirror && (IS_IOS || (Z.useHw && !Z.ultra))) || !vw || !vh || !HTMLCanvasElement.prototype.captureStream) return stream;
+    recCanvas = document.createElement('canvas');
+    recCanvas.width = vw; recCanvas.height = vh;
+    const c = recCanvas.getContext('2d', { alpha: false, desynchronized: true });
+    // 'high' pesa demais no celular (1080p a cada quadro) e faz o vídeo engasgar; 'medium' fica igual a olho nu
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'medium';
+    // Chrome/Android: o vídeo pega um quadro SÓ quando a câmera entrega um novo (requestFrame).
+    // Com captureStream(30) o canvas é copiado num relógio próprio, que desencontra da câmera -> quadros repetidos/pulados = travadas.
+    const iOS = IS_IOS;
+    let out = null, vt = null;
+    if (!iOS) {
+      try { out = recCanvas.captureStream(0); vt = out.getVideoTracks()[0]; if (!vt || typeof vt.requestFrame !== 'function') { out = null; vt = null; } } catch (e) { out = null; vt = null; }
+    }
+    let lastDraw = 0;
+    const cancelDraw = () => {
+      if (useRvfc && typeof cam.cancelVideoFrameCallback === 'function') { try { cam.cancelVideoFrameCallback(drawRaf); } catch (e) {} }
+      cancelAnimationFrame(drawRaf);
+    };
+    const draw = () => {
+      if (!recCanvas) return;
+      // a lente pode trocar no meio (0.5x): recorta a imagem atual no formato do vídeo
+      const sw0 = cam.videoWidth || vw, sh0 = cam.videoHeight || vh;
+      let bw = sw0, bh = sw0 * vh / vw;
+      if (bh > sh0) { bh = sh0; bw = sh0 * vw / vh; }
+      const d = Z.digital || 1, sw = bw / d, sh = bh / d;
+      c.setTransform(mirror ? -1 : 1, 0, 0, 1, mirror ? vw : 0, 0);
+      if (sw0 && sh0) { c.drawImage(cam, (sw0 - sw) / 2, (sh0 - sh) / 2, sw, sh, 0, 0, vw, vh); if (vt) vt.requestFrame(); }
+      lastDraw = performance.now();
+      // desenha 1x a cada quadro NOVO da camera (sem quadros repetidos/pulados = video sem travadas)
+      drawRaf = useRvfc ? cam.requestVideoFrameCallback(draw) : requestAnimationFrame(draw);
+    };
+    const useRvfc = typeof cam.requestVideoFrameCallback === 'function';
+    if (!useRvfc && vt) { out = null; vt = null; }      // sem aviso de quadro novo da câmera: volta pro relógio fixo
+    // VIGIA: quando o zoom troca de lente ou reconfigura a câmera, o aviso de "quadro novo" pode parar de chegar
+    // e o vídeo congelava pra sempre. Se passar 150 ms sem desenhar, religa o desenho na hora.
+    clearInterval(recWatch);
+    recWatch = setInterval(() => {
+      if (!recCanvas) { clearInterval(recWatch); return; }
+      if (performance.now() - lastDraw > 150 && cam.readyState >= 2) { cancelDraw(); draw(); }
+    }, 100);
+    draw();
+    return out || recCanvas.captureStream(30);
+  }
+  function stopCanvas() {
+    clearInterval(recWatch);
+    if (typeof cam.cancelVideoFrameCallback === 'function') { try { cam.cancelVideoFrameCallback(drawRaf); } catch (e) {} }
+    cancelAnimationFrame(drawRaf);
+    if (recCanvas) { recCanvas.captureStream && recorder && recorder.stream.getVideoTracks().forEach(t => t.stop()); recCanvas = null; }
+  }
+  /* ---------- Juntar trechos MP4 (iPhone) ----------
+     O iPhone grava MP4 "em fragmentos": cabeçalho (ftyp+moov) e depois blocos (moof+mdat).
+     Pra juntar os trechos entre pausas, copia os blocos de cada trecho em sequência e só
+     adianta o relógio (tfdt) de cada bloco. Não recodifica nada: é instantâneo e sem perda.
+     Se algo não bater (formato diferente entre trechos), devolve null. */
+  function juntarMp4(bufs) {
+    const u = bufs.map(b => new Uint8Array(b));
+    const dv = a => new DataView(a.buffer, a.byteOffset, a.byteLength);
+    const tipo = (a, o) => String.fromCharCode(a[o + 4], a[o + 5], a[o + 6], a[o + 7]);
+    function caixas(a, o, fim) {
+      const v = dv(a), r = [];
+      while (o + 8 <= fim) {
+        let tam = v.getUint32(o), cab = 8;
+        if (tam === 1) { tam = Number(v.getBigUint64(o + 8)); cab = 16; }
+        else if (tam === 0) tam = fim - o;
+        if (tam < cab || o + tam > fim) break;
+        r.push({ t: tipo(a, o), o, cab, tam });
+        o += tam;
+      }
+      return r;
+    }
+    const filho = (a, bx, t) => caixas(a, bx.o + bx.cab, bx.o + bx.tam).find(c => c.t === t);
+    const iguais = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+    // compara o formato ignorando a 'btrt' (taxa de bits média), que muda de um trecho pro outro sem importar
+    const semBtrt = s => { const c = s.slice(); for (let i = 4; i + 16 <= c.length; i++) if (c[i] === 0x62 && c[i + 1] === 0x74 && c[i + 2] === 0x72 && c[i + 3] === 0x74) c.fill(0, i + 4, i + 16); return c; };
+
+    function ler(a) {
+      const v = dv(a), top = caixas(a, 0, a.length);
+      const ftyp = top.find(c => c.t === 'ftyp'), moov = top.find(c => c.t === 'moov');
+      if (!ftyp || !moov) return null;
+      const trilhas = {};
+      for (const tk of caixas(a, moov.o + 8, moov.o + moov.tam).filter(c => c.t === 'trak')) {
+        const tkhd = filho(a, tk, 'tkhd'), mdia = filho(a, tk, 'mdia');
+        if (!tkhd || !mdia) return null;
+        const id = v.getUint32(tkhd.o + (a[tkhd.o + 8] === 1 ? 28 : 20));
+        const mdhd = filho(a, mdia, 'mdhd'), hdlr = filho(a, mdia, 'hdlr');
+        const escala = v.getUint32(mdhd.o + (a[mdhd.o + 8] === 1 ? 28 : 20));
+        const minf = filho(a, mdia, 'minf'), stbl = minf && filho(a, minf, 'stbl'), stsd = stbl && filho(a, stbl, 'stsd');
+        if (!stsd) return null;
+        trilhas[id] = { id, escala, tipo: tipo(a, hdlr.o + 8 + 4), stsd: a.subarray(stsd.o, stsd.o + stsd.tam), durPadrao: 0 };
+      }
+      const mvex = filho(a, moov, 'mvex');
+      if (mvex) for (const tx of caixas(a, mvex.o + 8, mvex.o + mvex.tam).filter(c => c.t === 'trex')) {
+        const id = v.getUint32(tx.o + 12); if (trilhas[id]) trilhas[id].durPadrao = v.getUint32(tx.o + 20);
+      }
+      const porTipo = {};
+      for (const t of Object.values(trilhas)) { if (porTipo[t.tipo]) return null; porTipo[t.tipo] = t; }
+      return { a, ftyp, moov, trilhas, porTipo, blocos: top.filter(c => c.t === 'moof' || c.t === 'mdat') };
+    }
+
+    // percorre os traf de um moof: avisa tfdt, base_data_offset e duração total dos quadros
+    function trafs(a, moof, trilhas, cb) {
+      const v = dv(a);
+      for (const tf of caixas(a, moof.o + 8, moof.o + moof.tam).filter(c => c.t === 'traf')) {
+        const tfhd = filho(a, tf, 'tfhd'), tfdt = filho(a, tf, 'tfdt');
+        if (!tfhd || !tfdt) return false;
+        const fl = v.getUint32(tfhd.o + 8) & 0xffffff, id = v.getUint32(tfhd.o + 12);
+        let p = tfhd.o + 16, baseOff = -1, durPadrao = trilhas[id] ? trilhas[id].durPadrao : 0;
+        if (fl & 1) { baseOff = p; p += 8; }
+        if (fl & 2) p += 4;
+        if (fl & 8) durPadrao = v.getUint32(p);
+        let dur = 0;
+        for (const tr of caixas(a, tf.o + 8, tf.o + tf.tam).filter(c => c.t === 'trun')) {
+          const tfl = v.getUint32(tr.o + 8) & 0xffffff, n = v.getUint32(tr.o + 12);
+          let q = tr.o + 16 + (tfl & 1 ? 4 : 0) + (tfl & 4 ? 4 : 0);
+          const passo = ((tfl & 0x100) ? 4 : 0) + ((tfl & 0x200) ? 4 : 0) + ((tfl & 0x400) ? 4 : 0) + ((tfl & 0x800) ? 4 : 0);
+          if (tfl & 0x100) { for (let i = 0; i < n; i++, q += passo) dur += v.getUint32(q); }
+          else dur += n * durPadrao;
+        }
+        const v1 = a[tfdt.o + 8] === 1;
+        const ini = v1 ? Number(v.getBigUint64(tfdt.o + 12)) : v.getUint32(tfdt.o + 12);
+        cb({ id, ini, dur, tfdtPos: tfdt.o + 12, v1, baseOff, idPos: tfhd.o + 12 });
+      }
+      return true;
+    }
+
+    const arqs = u.map(ler);
+    if (!arqs.length || arqs.some(x => !x)) return null;
+    const ref = arqs[0], tipos = Object.keys(ref.porTipo).sort();
+    // todos os trechos têm que ter as mesmas trilhas (imagem/som) e o mesmo formato; o número de cada trilha pode mudar
+    for (const x of arqs) {
+      if (Object.keys(x.porTipo).sort().join() !== tipos.join()) return null;
+      for (const tp of tipos) {
+        const r = ref.porTipo[tp], t = x.porTipo[tp];
+        if (r.escala !== t.escala || !iguais(semBtrt(r.stsd), semBtrt(t.stsd))) return null;
+      }
+    }
+    const partes = [ref.a.subarray(ref.ftyp.o, ref.ftyp.o + ref.ftyp.tam), ref.a.subarray(ref.moov.o, ref.moov.o + ref.moov.tam)];
+    let pos = ref.ftyp.tam + ref.moov.tam, seq = 0, T = 0;   // T = segundos já usados pelos trechos anteriores
+    for (const x of arqs) {
+      const fim = {};
+      for (const bl of x.blocos) {
+        const pedaco = x.a.slice(bl.o, bl.o + bl.tam), pv = dv(pedaco);
+        if (bl.t === 'moof') {
+          const mfhd = filho(pedaco, { o: 0, cab: 8, tam: pedaco.length }, 'mfhd');
+          if (mfhd) pv.setUint32(mfhd.o + 12, ++seq);
+          const ok = trafs(pedaco, { o: 0, cab: 8, tam: pedaco.length }, x.trilhas, f => {
+            const tr = x.trilhas[f.id]; if (!tr) return;
+            pv.setUint32(f.idPos, ref.porTipo[tr.tipo].id);          // usa o número da trilha do 1º trecho
+            const novo = f.ini + Math.round(T * tr.escala);
+            if (f.v1) pv.setBigUint64(f.tfdtPos, BigInt(novo)); else pv.setUint32(f.tfdtPos, novo);
+            if (f.baseOff >= 0) pv.setBigUint64(f.baseOff, pv.getBigUint64(f.baseOff) + BigInt(pos - bl.o));
+            fim[tr.tipo] = Math.max(fim[tr.tipo] || 0, (f.ini + f.dur) / tr.escala);
+          });
+          if (!ok) return null;
+        }
+        partes.push(pedaco); pos += pedaco.length;
+      }
+      // o próximo trecho começa onde o mais longo (imagem ou som) deste terminou: mantém a sincronia
+      T += Math.max(0, ...Object.values(fim));
+    }
+    return partes;
+  }
+
+  const elapsed = () => (performance.now() - recStart - pausedTotal - (pausedAt ? performance.now() - pausedAt : 0)) / 1000;
+  // iPhone: o "continuar" do gravador do Safari às vezes volta só com o som (a imagem some até o fim).
+  // Então no iPhone pausar ENCERRA o trecho e continuar começa um trecho novo; no fim, juntarMp4 emenda tudo.
+  const SEG_MODE = IS_IOS;
+  let segs = [], segPaused = false, recSrc = null, recType = '';
+  const isRec = () => segPaused || (recorder && (recorder.state === 'recording' || recorder.state === 'paused'));
+  function novoRecorder() {
+    let r;
+    try { r = new MediaRecorder(recSrc, recType ? { mimeType: recType, videoBitsPerSecond: 8000000 } : undefined); }
+    catch (e) { r = new MediaRecorder(recSrc); }
+    const meus = [];
+    r.ondataavailable = e => { if (e.data && e.data.size) meus.push(e.data); };
+    r._pronto = new Promise(res => { r.onstop = () => { if (meus.length) segs.push(new Blob(meus, { type: (r.mimeType || recType || 'video/mp4').split(';')[0] })); res(); }; });
+    // MP4 (iPhone/Safari): gravar em pedacos de 1 s deixa o video travando nas emendas -> grava inteiro e entrega no fim
+    if ((r.mimeType || recType || '').includes('mp4')) r.start(); else r.start(1000);
+    return r;
+  }
+
+  async function startRec() {
+    const type = pickType();
+    if (type === null) { $('recBtn').disabled = true; return; }
+    $('recBtn').disabled = true;
+    scroller.scrollTop = 0; pos = 0;
+    await countdown();
+    chunks = []; pausedTotal = 0; pausedAt = 0;
+    const mic = await garantirMic();
+    const vsrc = recordingStream();
+    const audio = mic ? (mesaDeSom() || stream.getAudioTracks()[0]) : null;
+    micAviso = !audio;
+    const src = new MediaStream([...vsrc.getVideoTracks(), ...(audio ? [audio] : [])]);
+    segs = []; segPaused = false; recSrc = src; recType = type;
+    recorder = novoRecorder();
+    recStart = performance.now();
+    $('recBtn').disabled = false; $('recBtn').classList.add('on'); $('recBtn').setAttribute('aria-label', 'Parar gravação');
+    $('app').classList.add('recording');
+    $('pauseBtn').hidden = !SEG_MODE && typeof recorder.pause !== 'function';
+    setPauseUI(false);
+    $('recPill').hidden = false; $('recPill').classList.add('rec'); $('recPill').textContent = '0:00';
+    recTimer = setInterval(() => { $('recPill').textContent = (pausedAt ? 'Pausado · ' : '') + fmt(elapsed()); }, 250);
+    if (prefs.autoScroll) startScroll();
+  }
+  function setPauseUI(paused) {
+    $('icoPauseRec').hidden = paused; $('icoResumeRec').hidden = !paused;
+    $('pauseBtn').setAttribute('aria-label', paused ? 'Continuar gravação' : 'Pausar gravação');
+    $('pauseBtn').setAttribute('aria-pressed', String(paused));
+    $('recPill').classList.toggle('rec', !paused);
+    $('recPill').classList.toggle('paused', paused);
+  }
+  function togglePause() {
+    if (!recorder) return;
+    if (SEG_MODE) {
+      if (!segPaused && recorder.state === 'recording') {
+        segPaused = true; recorder.stop();                       // fecha este trecho inteiro (com imagem e som)
+        pausedAt = performance.now(); stopScroll(); setPauseUI(true);
+      } else if (segPaused) {
+        segPaused = false; recorder = novoRecorder();             // trecho novo, gravador novo
+        pausedTotal += performance.now() - pausedAt; pausedAt = 0; setPauseUI(false);
+        if (prefs.autoScroll) startScroll();
+      }
+    } else if (recorder.state === 'recording') {
+      recorder.pause(); pausedAt = performance.now(); stopScroll(); setPauseUI(true);
+    } else if (recorder.state === 'paused') {
+      recorder.resume(); pausedTotal += performance.now() - pausedAt; pausedAt = 0; setPauseUI(false);
+      if (prefs.autoScroll) startScroll();
+    }
+    $('recPill').textContent = (pausedAt ? 'Pausado · ' : '') + fmt(elapsed());
+  }
+  $('pauseBtn').addEventListener('click', togglePause);
+  let parando = false;
+  async function stopRec() {
+    if (parando) return; parando = true;
+    if (pausedAt) { pausedTotal += performance.now() - pausedAt; pausedAt = 0; }
+    lastDuration = elapsed();
+    stopScroll();
+    const r = recorder; segPaused = false;
+    $('recBtn').disabled = true;
+    if (r && r.state !== 'inactive') r.stop();
+    try { if (r && r._pronto) await r._pronto; } catch (e) {}
+    $('recBtn').disabled = false;
+    await finishRec();
+    parando = false;
+  }
+  let lastDuration = 0, segUrls = [];
+  async function finishRec() {
+    clearInterval(recTimer);
+    stopCanvas();
+    $('recBtn').classList.remove('on'); $('recBtn').setAttribute('aria-label', 'Gravar');
+    $('app').classList.remove('recording'); $('pauseBtn').hidden = true;
+    $('recPill').hidden = true; $('recPill').classList.remove('paused');
+    const type = (recorder.mimeType || (segs[0] && segs[0].type) || 'video/mp4');
+    const ext = type.includes('mp4') ? 'mp4' : 'webm';
+    let falhouJuntar = false;
+    $('segLinks').hidden = true; $('segLinks').innerHTML = '';
+    if (segs.length > 1 && ext === 'mp4') {
+      $('doneInfo').textContent = 'Juntando os trechos…';
+      let partes = null;
+      try { partes = juntarMp4(await Promise.all(segs.map(b => b.arrayBuffer()))); } catch (e) { partes = null; }
+      if (partes) lastBlob = new Blob(partes, { type: 'video/mp4' });
+      else { falhouJuntar = true; lastBlob = segs[0]; }
+    } else lastBlob = segs[0] || new Blob([], { type: type.split(';')[0] });
+    const d = new Date();
+    lastName = `video-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.${ext}`;
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
+    blobUrl = URL.createObjectURL(lastBlob);
+    $('preview').src = blobUrl;
+    $('dlLink').href = blobUrl; $('dlLink').download = lastName;
+    $('doneInfo').textContent = `${fmt(lastDuration)} · ${(lastBlob.size / 1048576).toFixed(1)} MB` + (micAviso ? ' · ⚠ sem som: o microfone não estava liberado' : '');
+    if (falhouJuntar) {   // não deu pra emendar: entrega cada trecho separado, pra não perder nada
+      segUrls.forEach(u => URL.revokeObjectURL(u)); segUrls = segs.map(b => URL.createObjectURL(b));
+      $('segLinks').innerHTML = '<div class="hint" style="color:#ff6b6b">Não consegui juntar os trechos. Baixe cada um:</div>' +
+        segUrls.map((u, i) => `<a class="btn btn-ghost" href="${u}" download="${lastName.replace('.mp4', '-trecho' + (i + 1) + '.mp4')}">Trecho ${i + 1}</a>`).join('');
+      $('segLinks').hidden = false;
+    }
+    if (acSrc) { try { acSrc.disconnect(); } catch (e) {} acSrc = null; }
+    const file = new File([lastBlob], lastName, { type: lastBlob.type });
+    $('shareBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+    askDiscard(false);
+    $('doneSheet').hidden = false;
+  }
+  $('recBtn').addEventListener('click', () => {
+    if (swallowClick) { swallowClick = false; return; } // foi arrasto de zoom, não toque
+    isRec() ? stopRec() : startRec();
+  });
+  $('shareBtn').addEventListener('click', async () => {
+    try { await navigator.share({ files: [new File([lastBlob], lastName, { type: lastBlob.type })] }); } catch (e) {}
+  });
+  // "Gravar de novo" pede confirmação (pra não apagar o vídeo com um toque sem querer)
+  const askDiscard = show => { $('discardAsk').hidden = !show; $('discardRow').hidden = show; };
+  $('discardBtn').addEventListener('click', () => askDiscard(true));
+  $('discardNo').addEventListener('click', () => askDiscard(false));
+  $('discardYes').addEventListener('click', () => { askDiscard(false); $('doneSheet').hidden = true; $('preview').pause(); scroller.scrollTop = 0; pos = 0; });
+
+  /* ---------- Painéis ---------- */
+  const open = id => { stopScroll(); $(id).hidden = false; };
+  $('editBtn').addEventListener('click', () => { estimate(); open('editSheet'); });
+  $('setBtn').addEventListener('click', () => open('setSheet'));
+  $('editDone').addEventListener('click', () => { $('editSheet').hidden = true; build(); scroller.scrollTop = 0; });
+  $('setDone').addEventListener('click', () => { $('setSheet').hidden = true; });
+  document.querySelectorAll('.sheet-wrap').forEach(w => w.addEventListener('click', e => {
+    if (e.target === w && w.id !== 'doneSheet') { w.hidden = true; build(); }
+  }));
+  $('script').addEventListener('input', () => { prefs.script = $('script').value; save(); estimate(); });
+  $('exampleBtn').addEventListener('click', () => { $('script').value = prefs.script = EXAMPLE; save(); estimate(); });
+  ['speed', 'size', 'shade'].forEach(id => $(id).addEventListener('input', () => { prefs[id] = +$(id).value; save(); layout(); }));
+  // velocidade na barra de gravação (funciona gravando e pausado)
+  function setSpeed(v) {
+    prefs.speed = Math.max(1, Math.min(20, v));
+    $('speed').value = prefs.speed; save(); layout(); syncSpd();
+  }
+  function syncSpd() { $('spdNum').textContent = prefs.speed; $('spdDown').disabled = prefs.speed <= 1; $('spdUp').disabled = prefs.speed >= 20; }
+  [['spdDown', -1], ['spdUp', 1]].forEach(([id, d]) => {
+    let hold = 0, rep = 0;
+    const stop = () => { clearTimeout(hold); clearInterval(rep); };
+    $(id).addEventListener('pointerdown', e => { e.preventDefault(); setSpeed(prefs.speed + d); stop(); hold = setTimeout(() => { rep = setInterval(() => setSpeed(prefs.speed + d), 140); }, 450); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => $(id).addEventListener(ev, stop));
+    $(id).addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSpeed(prefs.speed + d); } });
+  });
+  syncSpd();
+  ['autoScroll', 'useCountdown', 'flipText', 'fitWhole', 'mirrorRec', 'mirrorView'].forEach(id => $(id).addEventListener('change', () => { prefs[id] = $(id).checked; save(); layout(); applyFit(); applyMirror(); }));
+  function applyMirror() { applyView(); }
+
+  /* ---------- Atualização automática ----------
+     Ao abrir e sempre que o app volta pra tela, busca a página no site sem usar a cópia guardada.
+     Se o número da versão mudou: recarrega sozinho (ou, se estiver gravando/editando, mostra um aviso pra tocar). */
+  let novaVersao = null;
+  const podeRecarregar = () => !isRec() && !sheetOpen() && $('countdown').hidden && $('doneSheet').hidden;
+  function recarregar() {
+    const u = new URL(location.href); u.searchParams.set('v', novaVersao || Date.now());
+    location.replace(u.toString());
+  }
+  async function checarVersao() {
+    if (!/^https?:$/.test(location.protocol)) return;
+    try {
+      const u = new URL(location.href); u.hash = ''; u.searchParams.set('chk', Date.now());
+      const html = await (await fetch(u.toString(), { cache: 'no-store' })).text();
+      const m = html.match(/const APP_VERSION = '([^']+)'/);
+      if (!m || m[1] === APP_VERSION) return;
+      novaVersao = m[1];
+      if (!$('gate').hidden || podeRecarregar()) recarregar(); else $('updTip').hidden = false;
+    } catch (e) {}
+  }
+  $('updTip').addEventListener('click', () => { if (!isRec()) recarregar(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checarVersao(); });
+  setInterval(() => { if (!document.hidden && !isRec()) checarVersao(); }, 5 * 60 * 1000);
+  checarVersao();
+
+  window.addEventListener('resize', layout);
+  build();
+})();
+</script>
+</body>
+</html>
