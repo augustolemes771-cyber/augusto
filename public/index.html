@@ -263,7 +263,7 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
 (() => {
   const $ = (id) => document.getElementById(id);
   // A cada versão publicada, este número muda. O app compara com o do site e se atualiza sozinho.
-  const APP_VERSION = '13/10k';
+  const APP_VERSION = '20/10a';
   $('verTxt').textContent = 'versão ' + APP_VERSION + ' · atualiza sozinho';
   const EXAMPLE = `# ABERTURA
 Se você quer começar no *TikTok Shop* e não sabe por onde, presta atenção nesse vídeo.
@@ -286,7 +286,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   // Qualidade: 1080p sempre por padrão (a 13/10j tinha posto 720p no iPhone; aqui volta pra 1080p uma vez)
   if (prefs.hd1080 === undefined || prefs.hdPadrao !== 2) { prefs.hd1080 = true; prefs.hdPadrao = 2; try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch (e) {} }
-  const vidCons = extra => Object.assign({ width: { ideal: prefs.hd1080 ? 1920 : 1280 }, height: { ideal: prefs.hd1080 ? 1080 : 720 }, frameRate: { ideal: 30 } }, extra);
+  const vidCons = extra => Object.assign({ width: { ideal: prefs.hd1080 ? 1920 : 1280 }, height: { ideal: prefs.hd1080 ? 1080 : 720 }, frameRate: { ideal: 60 } }, extra); // 60 fps por padrão (se a câmera não aguentar, o navegador cai pro máximo dela)
   // iPhone: usa o zoom da própria câmera e grava direto dela (igual o app Câmera: zoom suave e sem perder o fim do vídeo).
   // Montar o vídeo quadro a quadro com zoom digital pesa demais no iPhone e a imagem congelava no final.
   if (IS_IOS && prefs.zoomHwIos !== 'v1') { prefs.zoomHw = true; prefs.zoomHwIos = 'v1'; }
@@ -786,7 +786,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
       if (performance.now() - lastDraw > 150 && cam.readyState >= 2) { cancelDraw(); draw(); }
     }, 100);
     draw();
-    return out || recCanvas.captureStream(30);
+    return out || recCanvas.captureStream(60);
   }
   function stopCanvas() {
     clearInterval(recWatch);
@@ -1106,7 +1106,7 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
   const isRec = () => segPaused || (ativo && recuperando) || (recorder && (recorder.state === 'recording' || recorder.state === 'paused'));
   function novoRecorder() {
     let r;
-    try { r = new MediaRecorder(recSrc, recType ? { mimeType: recType, videoBitsPerSecond: prefs.hd1080 ? 8000000 : 5000000 } : undefined); }
+    try { r = new MediaRecorder(recSrc, recType ? { mimeType: recType, videoBitsPerSecond: prefs.hd1080 ? 12000000 : 7500000 } : undefined); }
     catch (e) { r = new MediaRecorder(recSrc); }
     const meus = [];
     r.ondataavailable = e => { if (e.data && e.data.size) meus.push(e.data); };
