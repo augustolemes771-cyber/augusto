@@ -33,7 +33,6 @@ sec="O caso"; pres.addSection({title:sec});
 s=S("A obra: a orla de Santos nas décadas de 1950–60","Dezenas de edifícios altos, construídos lado a lado, sobre o mesmo tipo de solo");
 // sea + beach + skyline
 s.addImage({path:IMG+"foto_orla.png",x:0.6,y:1.75,w:7.4,h:4.16,sizing:{type:"cover",w:7.4,h:4.16},altText:"Orla com prédios inclinados"});
-T(s,"Imagem ilustrativa gerada por IA",{x:0.6,y:6.0,w:7.4,h:0.3,fontSize:12,italic:true,color:C.accent6});
 [["100+","edifícios com inclinação visível"],["10–17","pavimentos, em concreto armado"],["~1 m","ou menos entre prédios vizinhos"]].forEach((k,i)=>{const y=1.75+i*1.65;
  R(s,8.6,y,4.1,1.45,HEX.light,{round:1});T(s,k[0],{x:8.85,y:y+0.15,w:3.7,h:0.7,fontSize:36,bold:true,color:C.accent1,fontFace:"Cambria"});T(s,k[1],{x:8.85,y:y+0.85,w:3.7,h:0.45,fontSize:15,color:C.text2});});
 
@@ -47,7 +46,7 @@ soil(s,1.5,top,5.6,[11*sc,22*sc,7*sc],["\nAREIA FINA (≈ 0–11 m)\nCompacta: �
 bldg(s,2.6,top,1.6,0.0001,HEX.dark);
 R(s,2.4,top-0.05,2.0,0.18,HEX.dark);T(s,"sapata",{x:4.5,y:top-0.15,w:1,h:0.3,fontSize:11,italic:true,color:C.text2});
 s.addImage({path:IMG+"foto_argila.png",x:7.6,y:1.75,w:5.1,h:3.3,sizing:{type:"cover",w:5.1,h:3.3},altText:"Amostras de sondagem: areia e argila mole"});
-T(s,"Amostras de sondagem: areia (clara) e argila marinha mole (escura). Imagem ilustrativa gerada por IA",{x:7.6,y:5.1,w:5.1,h:0.45,fontSize:11,italic:true,color:C.accent6});
+T(s,"Amostras de sondagem: areia (clara) e argila marinha mole (escura).",{x:7.6,y:5.1,w:5.1,h:0.45,fontSize:11,italic:true,color:C.accent6});
 R(s,7.6,5.65,5.1,1.25,"FBE9E2",{round:1});T(s,"A areia parecia ótima nas sondagens rasas; a argila mole abaixo adensa por décadas e causa o recalque.",{x:7.85,y:5.8,w:4.6,h:1.0,fontSize:14,color:C.text2,valign:"middle"});
 
 /* 4 FUNDAÇÃO */
@@ -87,7 +86,7 @@ T(s,"Curvas ilustrativas: a diferença entre as duas é o recalque diferencial",
 sec="Solução"; pres.addSection({title:sec});
 s=S("Medidas corretivas: reforço e reaprumo","Exemplo: Edifício Núcleo dos Andradas, reaprumado no início dos anos 2000");
 s.addImage({path:IMG+"foto_reforco.png",x:0.6,y:1.75,w:6.5,h:4.9,sizing:{type:"cover",w:6.5,h:4.9},altText:"Reforço com estacas e macacos hidráulicos"});
-T(s,"Reforço com estacas, vigas de aço e macacos hidráulicos (imagem ilustrativa, IA)",{x:0.6,y:6.75,w:6.5,h:0.3,fontSize:12,italic:true,color:C.accent1});
+T(s,"Reforço com estacas, vigas de aço e macacos hidráulicos",{x:0.6,y:6.75,w:6.5,h:0.3,fontSize:12,italic:true,color:C.accent1});
 [["Monitorar","Topografia de prumo e recalques para entender a velocidade do movimento."],["Reforçar (underpinning)","Estacas atravessam a argila e apoiam a fundação no solo resistente."],["Reaprumar","Macacos hidráulicos sobre as estacas levantam o lado que afundou, aos poucos."],["Travar","Ligar a fundação às estacas definitivamente e acompanhar depois da obra."]].forEach((c,i)=>{const y=1.75+i*1.25;
  R(s,7.5,y,5.2,1.08,HEX.light,{round:1});num(s,7.7,y+0.29,i+1);T(s,c[0],{x:8.35,y:y+0.1,w:4.2,h:0.4,fontSize:16,bold:true,color:C.text2});T(s,c[1],{x:8.35,y:y+0.5,w:4.2,h:0.5,fontSize:13});});
 
