@@ -1,77 +1,132 @@
 const pptxgen = require('pptxgenjs');
 const { applyTheme } = require("/root/.claude/skills/synced/e742b812-0cc9-40f0-ab0c-3a8d09290b97_d5b90541-8fca-467d-8ebd-c421c8d11c08/pptx/scripts/apply_theme.js");
-const THEME={name:"Solo",headFontFace:"Cambria",bodyFontFace:"Calibri",colors:{dk1:"1F2A2E",lt1:"FFFFFF",dk2:"3B2F26",lt2:"EEF1F2",accent1:"B5651D",accent2:"4A6670",accent3:"C9A66B",accent4:"7A8B6F",accent5:"8C2F2F",accent6:"5C5C5C",hlink:"B5651D",folHlink:"4A6670"}};
-const pres=new pptxgen(); pres.layout="LAYOUT_16x9"; pres.theme={headFontFace:"Cambria",bodyFontFace:"Calibri"};
-const C=pres.SchemeColor;
-pres.defineSlideMaster({title:"DARK",background:{color:C.text2},objects:[
- {placeholder:{options:{name:"title",type:"title",x:0.6,y:1.5,w:8.8,h:1.4,fontSize:38,bold:true,color:C.background1,valign:"bottom"},text:""}},
- {placeholder:{options:{name:"body",type:"body",x:0.6,y:3.0,w:8.8,h:1.8,fontSize:16,color:"C9A66B",valign:"top"},text:""}}]});
-pres.defineSlideMaster({title:"CONTENT",background:{color:C.background1},slideNumber:{x:9.2,y:5.2,w:0.5,h:0.3,fontSize:10,color:C.accent6},objects:[
- {placeholder:{options:{name:"title",type:"title",x:0.5,y:0.3,w:9,h:0.8,fontSize:30,bold:true,color:C.text2,valign:"middle"},text:""}}]});
-let sec=null; function S(m,t){const s=pres.addSlide({masterName:m,sectionTitle:sec}); s.addText(t,{placeholder:"title"}); return s;}
-function card(s,x,y,w,h,head,body,n){
- s.addShape(pres.shapes.ROUNDED_RECTANGLE,{x,y,w,h,rectRadius:0.08,fill:{color:C.background2},line:{color:C.background2},objectName:"card"});
- s.addShape(pres.shapes.OVAL,{x:x+0.2,y:y+0.2,w:0.5,h:0.5,fill:{color:C.accent1},line:{color:C.accent1}});
- s.addText(String(n),{x:x+0.2,y:y+0.2,w:0.5,h:0.5,align:"center",valign:"middle",bold:true,fontSize:16,color:C.background1,isTextBox:true,margin:0});
- s.addText(head,{x:x+0.85,y:y+0.15,w:w-1,h:0.6,bold:true,fontSize:15,color:C.text2,valign:"middle",isTextBox:true,margin:0});
- s.addText(body,{x:x+0.2,y:y+0.85,w:w-0.4,h:h-1,fontSize:13,color:C.text1,valign:"top",isTextBox:true,margin:0});}
-function bullets(s,items,x,y,w,h,fs=15){s.addText(items.map((t,i)=>({text:t,options:{bullet:true,breakLine:i<items.length-1,paraSpaceAfter:8}})),{x,y,w,h,fontSize:fs,color:C.text1,valign:"top",isTextBox:true});}
+const HEX={dark:"17212B",sand:"D9B26F",clay:"5B7C8D",clayD:"3E5A68",rust:"C4572B",light:"F3F5F6",grey:"6B7780",firm:"7F8F5E",white:"FFFFFF"};
+const THEME={name:"Fundacoes",headFontFace:"Cambria",bodyFontFace:"Calibri",colors:{dk1:"1E262D",lt1:"FFFFFF",dk2:HEX.dark,lt2:HEX.light,accent1:HEX.rust,accent2:HEX.clay,accent3:HEX.sand,accent4:HEX.firm,accent5:"8C2F2F",accent6:HEX.grey,hlink:HEX.rust,folHlink:HEX.clay}};
+const pres=new pptxgen(); pres.layout="LAYOUT_WIDE"; pres.theme={headFontFace:"Cambria",bodyFontFace:"Calibri"};
+const C=pres.SchemeColor, SH=pres.shapes;
+pres.defineSlideMaster({title:"DARK",background:{color:C.text2},objects:[]});
+pres.defineSlideMaster({title:"CONTENT",background:{color:C.background1},slideNumber:{x:12.5,y:7.0,w:0.5,h:0.3,fontSize:10,color:C.accent6},objects:[
+ {placeholder:{options:{name:"title",type:"title",x:0.6,y:0.35,w:12.1,h:0.8,fontSize:30,bold:true,color:C.text2,valign:"middle",align:"left"},text:""}},
+ {placeholder:{options:{name:"body",type:"body",x:0.6,y:1.1,w:12.1,h:0.45,fontSize:15,italic:true,color:C.accent1,valign:"top",align:"left"},text:""}}]});
+let sec; const S=(t,sub)=>{const s=pres.addSlide({masterName:"CONTENT",sectionTitle:sec}); s.addText(t,{placeholder:"title"}); if(sub) s.addText(sub,{placeholder:"body"}); return s;};
+const T=(s,text,o)=>s.addText(text,Object.assign({isTextBox:true,margin:0,fontSize:14,color:C.text1,valign:"top"},o));
+const R=(s,x,y,w,h,color,o={})=>s.addShape(o.round?SH.ROUNDED_RECTANGLE:SH.RECTANGLE,Object.assign({x,y,w,h,fill:{color,transparency:o.tr||0},line:{color:o.lc||color,width:o.lw||0.75}},o.round?{rectRadius:0.08}:{},o.rot?{rotate:o.rot}:{}));
+const line=(s,x,y,w,h,color,o={})=>s.addShape(SH.LINE,{x,y,w,h,flipH:!!o.flipH,line:{color,width:o.width||1.5,dashType:o.dash||"solid",endArrowType:o.arrow||"none",beginArrowType:o.barrow||"none"}});
+const num=(s,x,y,n,color=C.accent1)=>{s.addShape(SH.OVAL,{x,y,w:0.5,h:0.5,fill:{color},line:{color}});T(s,String(n),{x,y,w:0.5,h:0.5,align:"center",valign:"middle",bold:true,fontSize:16,color:C.background1});};
+// building with windows, optional tilt (draw windows only if not tilted)
+function bldg(s,x,base,w,h,color,rot=0){R(s,x,base-h,w,h,color,{rot});
+ if(!rot){const cols=Math.max(2,Math.round(w/0.35)),rows=Math.round(h/0.4);for(let r=0;r<rows-1;r++)for(let c=0;c<cols;c++)R(s,x+0.12+c*(w-0.24)/cols,base-h+0.15+r*0.4,(w-0.24)/cols-0.08,0.2,HEX.sand,{tr:30});}}
+function soil(s,x,y,w,hs,labels,fs=13){let yy=y;const cols=[HEX.sand,HEX.clay,HEX.firm];hs.forEach((h,i)=>{R(s,x,yy,w,h,cols[i]);if(labels&&labels[i])T(s,labels[i],{x:x+0.15,y:yy+0.08,w:w-0.3,h:h-0.1,fontSize:fs,bold:true,color:C.background1,valign:i==1?"middle":"top"});yy+=h;});}
 
+/* 1 CAPA */
 sec="Abertura"; pres.addSection({title:sec});
-let s=S("DARK","Os prédios inclinados de Santos (SP)");
-s.addText("Estudo de caso: falhas em fundações por recalque diferencial\nFundações · Engenharia Civil · 6º período\nProf. Me. Luiz Gustavo Pimenta de Pádua\nAluno: ______________________",{placeholder:"body"});
+let s=pres.addSlide({masterName:"DARK",sectionTitle:sec});
+soil(s,6.6,5.2,6.73,[0.7,1.0,0.6]);
+[[7.0,1.0,3.4,-6],[8.3,1.0,3.9,-3],[9.6,1.0,3.6,4],[10.9,1.0,3.2,7],[12.15,0.9,2.6,0]].forEach(b=>R(s,b[0],5.2-b[2],b[1],b[2],b[3]?HEX.rust:HEX.grey,{rot:b[3],tr:b[3]?0:40}));
+line(s,7.5,1.2,0,4.0,HEX.white,{dash:"dash",width:1});line(s,10.1,1.4,0,3.8,HEX.white,{dash:"dash",width:1});
+T(s,"ESTUDO DE CASO · FALHAS EM FUNDAÇÕES",{x:0.6,y:1.2,w:6,h:0.4,fontSize:14,bold:true,color:HEX.sand,charSpacing:2});
+s.addText("Os prédios inclinados de Santos",{x:0.6,y:1.7,w:5.9,h:1.9,fontFace:"Cambria",fontSize:44,bold:true,color:C.background1,isTextBox:true,margin:0,valign:"top"});
+T(s,"Recalque diferencial de fundações rasas sobre argila marinha mole",{x:0.6,y:3.7,w:5.6,h:0.8,fontSize:18,color:"C9D3D8"});
+T(s,"Engenharia Civil · 6º período · Fundações\nProf. Me. Luiz Gustavo Pimenta de Pádua\nAluno: ________________________",{x:0.6,y:5.3,w:5.6,h:1.3,fontSize:14,color:"C9D3D8"});
 
+/* 2 A OBRA */
 sec="O caso"; pres.addSection({title:sec});
-s=S("CONTENT","A obra: orla de Santos, décadas de 1950–60");
-bullets(s,["Boom imobiliário na orla santista (Gonzaga, Aparecida, Embaré, Ponta da Praia)","Edifícios residenciais de ~10 a 17 pavimentos, em concreto armado","Lotes estreitos: prédios muito próximos uns dos outros","Hoje, mais de uma centena de edifícios apresenta inclinação visível"],0.5,1.3,5.3,3.8);
-[["~100+","prédios com desaprumo"],["10–17","pavimentos típicos"],["1950–60","período de construção"]].forEach((k,i)=>{
- s.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:6.2,y:1.3+i*1.3,w:3.3,h:1.1,rectRadius:0.08,fill:{color:C.text2},line:{color:C.text2}});
- s.addText([{text:k[0],options:{fontSize:28,bold:true,color:"C9A66B",breakLine:true}},{text:k[1],options:{fontSize:12,color:C.background1}}],{x:6.3,y:1.35+i*1.3,w:3.1,h:1.0,valign:"middle",isTextBox:true});});
+s=S("A obra: a orla de Santos nas décadas de 1950–60","Dezenas de edifícios altos, construídos lado a lado, sobre o mesmo tipo de solo");
+// sea + beach + skyline
+R(s,0.6,6.2,7.4,0.5,"7FA7B8");R(s,0.6,5.9,7.4,0.3,HEX.sand);T(s,"Oceano",{x:0.7,y:6.25,w:2,h:0.4,fontSize:12,color:C.background1,bold:true});T(s,"Praia / avenida da orla",{x:0.7,y:5.93,w:3,h:0.25,fontSize:11,color:C.text2});
+const tilts=[0,-2,2,-1.5,0,2.5,-2,1.5,0,2];tilts.forEach((t,i)=>{const h=[2.6,3.4,3.0,3.7,2.4,3.3,3.6,2.9,2.2,3.1][i];R(s,0.75+i*0.72,5.9-h,0.6,h,t?HEX.rust:"A9B4BA",{rot:t});});
+T(s,"Em laranja: prédios com desaprumo (esquema ilustrativo)",{x:0.6,y:1.75,w:7.4,h:0.3,fontSize:12,italic:true,color:C.accent6});
+[["100+","edifícios com inclinação visível"],["10–17","pavimentos, em concreto armado"],["~1 m","ou menos entre prédios vizinhos"]].forEach((k,i)=>{const y=1.75+i*1.65;
+ R(s,8.6,y,4.1,1.45,HEX.light,{round:1});T(s,k[0],{x:8.85,y:y+0.15,w:3.7,h:0.7,fontSize:36,bold:true,color:C.accent1,fontFace:"Cambria"});T(s,k[1],{x:8.85,y:y+0.85,w:3.7,h:0.45,fontSize:15,color:C.text2});});
 
-s=S("CONTENT","O subsolo: areia sobre argila mole marinha");
-const L=[["Areia fina compacta a medianamente compacta (~0 a 10–12 m)","C9A66B"],["Argila marinha mole, saturada, muito compressível (camadas de dezenas de metros)","4A6670"],["Areia / solo mais resistente em profundidade","7A8B6F"]];
-L.forEach((l,i)=>{const h=[1.0,1.8,0.8][i],y=[1.3,2.3,4.1][i];
- s.addShape(pres.shapes.RECTANGLE,{x:0.5,y,w:4.2,h,fill:{color:l[1]},line:{color:"FFFFFF"}});
- s.addText(l[0],{x:0.6,y,w:4.0,h,fontSize:13,bold:true,color:"FFFFFF",valign:"middle",isTextBox:true});});
-bullets(s,["A camada superficial de areia “parecia” boa: alta capacidade de carga para sapatas","O problema estava abaixo: a argila mole sofre adensamento lento sob carga","Recalques continuam por décadas (adensamento primário + secundário)"],5.0,1.3,4.5,3.8,14);
+/* 3 SUBSOLO */
+s=S("O subsolo: a boa areia escondia uma argila mole","Perfil típico da orla santista (espessuras aproximadas, variam ao longo da cidade)");
+// depth ruler
+const top=1.9, sc=0.11; // in/m
+[0,10,20,30,40].forEach(d=>{line(s,1.25,top+d*sc,0.15,0,HEX.grey,{width:1});T(s,d+" m",{x:0.55,y:top+d*sc-0.13,w:0.65,h:0.26,fontSize:11,color:C.accent6,align:"right"});});
+line(s,1.4,top,0,40*sc,HEX.grey,{width:1});
+soil(s,1.5,top,5.6,[11*sc,22*sc,7*sc],["\nAREIA FINA (≈ 0–11 m)\nCompacta: ótima para sapatas","ARGILA MARINHA MOLE (≈ 11–33 m)\nSaturada e muito compressível","SOLO RESISTENTE (> 33 m)"]);
+bldg(s,2.6,top,1.6,0.0001,HEX.dark);
+R(s,2.4,top-0.05,2.0,0.18,HEX.dark);T(s,"sapata",{x:4.5,y:top-0.15,w:1,h:0.3,fontSize:11,italic:true,color:C.text2});
+[["Areia superficial","Alta capacidade de carga. Sondagens rasas indicavam um solo excelente."],["Argila mole","Baixa resistência e alta compressibilidade. Sob carga, expulsa água lentamente (adensamento)."],["Resultado","Recalques que continuam por décadas, sem ruptura, mas com inclinação progressiva."]].forEach((c,i)=>{const y=1.75+i*1.65;
+ R(s,7.6,y,5.1,1.45,HEX.light,{round:1});num(s,7.8,y+0.2,i+1,[HEX.sand,HEX.clay,HEX.rust][i]);T(s,c[0],{x:8.45,y:y+0.22,w:4.1,h:0.45,fontSize:17,bold:true,color:C.text2,valign:"middle"});T(s,c[1],{x:8.45,y:y+0.7,w:4.1,h:0.7,fontSize:14});});
 
-s=S("CONTENT","A fundação utilizada");
-card(s,0.5,1.3,2.8,3.6,"Rasa","Sapatas isoladas, corridas ou radier apoiados na areia superficial, a poucos metros de profundidade.",1);
-card(s,3.6,1.3,2.8,3.6,"Projeto","Dimensionada pela capacidade de carga da areia; o recalque da argila profunda foi subestimado.",2);
-card(s,6.7,1.3,2.8,3.6,"Prática","Solução comum e econômica na época, antes de normas e investigações geotécnicas mais rigorosas.",3);
+/* 4 FUNDAÇÃO */
+s=S("A fundação utilizada: sapatas rasas na areia","O projeto verificou a capacidade de carga, mas não o recalque da argila profunda");
+soil(s,0.6,4.2,6.6,[1.2,1.3],[ "", "argila mole"]);
+R(s,1.2,1.75,5.4,2.25,"A9B4BA");T(s,"Edifício (≈ 12 pav.)",{x:1.2,y:2.6,w:5.4,h:0.4,align:"center",bold:true,color:C.text2,fontSize:15});
+[1.5,3.65,5.8].forEach(x=>{R(s,x,4.0,0.2,0.35,HEX.dark);R(s,x-0.35,4.35,0.9,0.22,HEX.dark);
+ s.addShape(SH.OVAL,{x:x-0.6,y:4.35,w:1.4,h:2.3,fill:{color:HEX.rust,transparency:65},line:{color:HEX.rust,width:1,dashType:"dash"}});});
+T(s,"Bulbos de tensões ultrapassam a areia e carregam a argila",{x:0.6,y:6.75,w:6.6,h:0.35,fontSize:13,italic:true,color:C.accent1});
+T(s,"areia",{x:0.7,y:4.25,w:1,h:0.3,fontSize:12,bold:true,color:C.background1});
+[["Tipo","Sapatas isoladas/corridas ou radier, a 1,5–3 m de profundidade"],["Critério de projeto","Tensão admissível da areia (capacidade de carga OK)"],["O que faltou","Estimar o recalque por adensamento da argila e a influência dos vizinhos"]].forEach((c,i)=>{const y=1.75+i*1.65;
+ R(s,7.6,y,5.1,1.45,i==2?"FBE9E2":HEX.light,{round:1});T(s,c[0],{x:7.85,y:y+0.15,w:4.6,h:0.45,fontSize:17,bold:true,color:i==2?C.accent1:C.text2});T(s,c[1],{x:7.85,y:y+0.6,w:4.6,h:0.75,fontSize:15});});
 
+/* 5 CAUSAS */
 sec="Análise"; pres.addSection({title:sec});
-s=S("CONTENT","Causas do problema");
-card(s,0.5,1.3,4.4,1.75,"Argila mole compressível","Bulbo de tensões das sapatas atinge a argila, que adensa e recalca.",1);
-card(s,5.1,1.3,4.4,1.75,"Interferência entre vizinhos","Bulbos de prédios colados se sobrepõem: o lado comum recalca mais.",2);
-card(s,0.5,3.25,4.4,1.75,"Carga excêntrica / heterogeneidade","Espessura variável da argila e cargas desiguais geram recalque diferencial.",3);
-card(s,5.1,3.25,4.4,1.75,"Investigação insuficiente","Sondagens rasas não revelaram a argila profunda.",4);
+s=S("Causa principal: bulbos de tensões sobrepostos","Entre dois prédios colados, a argila recebe carga dos dois lados e recalca mais");
+soil(s,0.6,4.0,7.0,[1.0,1.9,0.4]);
+R(s,1.1,1.75,2.4,2.25,"A9B4BA");R(s,4.7,1.75,2.4,2.25,"A9B4BA");T(s,"Prédio A",{x:1.1,y:2.6,w:2.4,h:0.4,align:"center",bold:true,color:C.text2});T(s,"Prédio B",{x:4.7,y:2.6,w:2.4,h:0.4,align:"center",bold:true,color:C.text2});
+s.addShape(SH.OVAL,{x:0.6,y:3.9,w:3.4,h:2.9,fill:{color:HEX.rust,transparency:70},line:{color:HEX.rust,width:1,dashType:"dash"}});
+s.addShape(SH.OVAL,{x:4.2,y:3.9,w:3.4,h:2.9,fill:{color:HEX.rust,transparency:70},line:{color:HEX.rust,width:1,dashType:"dash"}});
+R(s,3.55,4.6,1.1,0.55,HEX.dark,{round:1});T(s,"zona de\nsobreposição",{x:3.55,y:4.6,w:1.1,h:0.55,fontSize:10,bold:true,color:C.background1,align:"center",valign:"middle"});
+line(s,3.6,1.95,0,1.95,HEX.rust,{arrow:"triangle",width:2.5});line(s,4.6,1.95,0,1.95,HEX.rust,{arrow:"triangle",width:2.5});
+T(s,"maior recalque",{x:3.1,y:1.65,w:2,h:0.3,fontSize:12,bold:true,color:C.accent1,align:"center"});
+[["Argila mole compressível","Camada espessa e saturada sob a areia"],["Interferência entre vizinhos","Sobreposição de bulbos no lado comum"],["Heterogeneidade do solo","Espessura de argila variável sob o mesmo prédio"],["Investigação insuficiente","Sondagens não atingiam a argila profunda"]].forEach((c,i)=>{const y=1.75+i*1.25;
+ R(s,8.1,y,4.6,1.08,i==1?"FBE9E2":HEX.light,{round:1});num(s,8.3,y+0.29,i+1);T(s,c[0],{x:8.95,y:y+0.12,w:3.6,h:0.4,fontSize:16,bold:true,color:C.text2});T(s,c[1],{x:8.95,y:y+0.52,w:3.6,h:0.45,fontSize:14});});
 
-s=S("CONTENT","Mecanismo: recalque diferencial → inclinação");
-s.addShape(pres.shapes.RECTANGLE,{x:0.5,y:4.3,w:4.4,h:0.7,fill:{color:"4A6670"},line:{color:"4A6670"}});
-s.addText("argila mole",{x:0.5,y:4.3,w:4.4,h:0.7,align:"center",valign:"middle",color:"FFFFFF",fontSize:13,isTextBox:true});
-s.addShape(pres.shapes.RECTANGLE,{x:1.0,y:1.5,w:1.2,h:2.7,fill:{color:C.text2},line:{color:C.text2},rotate:4});
-s.addShape(pres.shapes.RECTANGLE,{x:2.8,y:1.5,w:1.2,h:2.7,fill:{color:C.accent1},line:{color:C.accent1},rotate:-4});
-s.addText("Prédios vizinhos “se inclinam” um contra o outro",{x:0.5,y:1.0,w:4.4,h:0.4,fontSize:12,italic:true,color:C.accent6,align:"center",isTextBox:true});
-bullets(s,["Recalque total não é o maior risco; o diferencial é","Desaprumo no topo pode chegar a mais de 1–2 m","Tensões adicionais nas fundações aceleram o processo (efeito progressivo)","Inclinação aceita até certos limites; acima disso, risco de tombamento"],5.2,1.3,4.3,3.8,14);
+/* 6 MECANISMO */
+s=S("Mecanismo: do recalque diferencial à inclinação","A diferença de recalque entre os lados da fundação gira o prédio inteiro");
+[["Construção","Prédio no prumo. Recalques ainda pequenos.",0,0],["Adensamento","A argila cede mais sob o lado mais carregado.",3,0.12],["Inclinação","Carga excêntrica aumenta o recalque daquele lado: efeito progressivo.",6,0.3]].forEach((p,i)=>{const x=0.6+i*4.2;
+ R(s,x,1.75,3.9,4.1,HEX.light,{round:1});num(s,x+0.2,1.95,i+1);T(s,p[0],{x:x+0.85,y:1.95,w:2.9,h:0.5,fontSize:18,bold:true,color:C.text2,valign:"middle"});
+ soil(s,x+0.3,4.6,3.3,[0.4,0.7]);
+ R(s,x+1.35,4.6-2.0-p[3]*0.5,1.2,2.0,i?HEX.rust:"A9B4BA",{rot:p[2]});
+ line(s,x+1.95,2.5,0,2.1,HEX.dark,{dash:"dash",width:1});
+ T(s,p[1],{x,y:6.0,w:3.9,h:0.9,fontSize:14,align:"left"});
+ if(i<2) s.addShape(SH.RIGHT_ARROW,{x:x+3.95,y:3.6,w:0.2,h:0.35,fill:{color:HEX.rust},line:{color:HEX.rust}});});
 
-s=S("CONTENT","Consequências");
-[["Segurança","Risco estrutural e, em casos extremos, de tombamento; monitoramento constante"],["Uso","Portas e janelas emperradas, pisos inclinados, problemas de elevador e drenagem"],["Econômico","Desvalorização dos imóveis e altos custos de recuperação"],["Social e normativo","Moradores afetados; mudança na prática local de fundações"]].forEach((c,i)=>{
- const x=0.5+(i%2)*4.6,y=1.3+Math.floor(i/2)*1.95; card(s,x,y,4.4,1.75,c[0],c[1],i+1);});
+/* 7 CONSEQUÊNCIAS */
+s=S("Consequências: um problema que cresce com o tempo","Recalques por adensamento seguem por décadas após a construção");
+s.addChart(pres.charts.LINE,[{name:"Lado mais carregado",labels:["0","5","10","20","30","40","50"],values:[0,25,40,58,68,75,80]},{name:"Lado oposto",labels:["0","5","10","20","30","40","50"],values:[0,12,19,27,32,35,37]}],
+ {x:0.6,y:1.75,w:6.8,h:4.6,chartColors:[HEX.rust,HEX.clay],lineSize:3,lineDataSymbol:"none",showLegend:true,legendPos:"b",legendFontSize:12,legendFontFace:"+mn-lt",
+  valAxisTitle:"Recalque (cm)",showValAxisTitle:true,catAxisTitle:"Anos após a construção",showCatAxisTitle:true,valAxisTitleFontSize:12,catAxisTitleFontSize:12,
+  catAxisLabelFontSize:12,valAxisLabelFontSize:12,catAxisLabelColor:HEX.grey,valAxisLabelColor:HEX.grey,catAxisLabelFontFace:"+mn-lt",valAxisLabelFontFace:"+mn-lt",
+  valGridLine:{color:"E2E6E8",size:0.5},catGridLine:{style:"none"},valAxisMaxVal:90});
+T(s,"Curvas ilustrativas: a diferença entre as duas é o recalque diferencial",{x:0.6,y:6.45,w:6.8,h:0.35,fontSize:12,italic:true,color:C.accent6});
+[["Segurança","Risco estrutural; em casos extremos, tombamento. Exige monitoramento."],["Uso","Portas emperradas, pisos inclinados, elevadores e drenagem afetados."],["Economia","Imóveis desvalorizados e reforços caros."],["Normas","A prática local mudou para fundações profundas."]].forEach((c,i)=>{const y=1.75+i*1.25;
+ R(s,7.9,y,4.8,1.08,HEX.light,{round:1});num(s,8.1,y+0.29,i+1,i?HEX.clay:HEX.rust);T(s,c[0],{x:8.75,y:y+0.1,w:3.8,h:0.4,fontSize:16,bold:true,color:C.text2});T(s,c[1],{x:8.75,y:y+0.5,w:3.8,h:0.5,fontSize:13});});
 
+/* 8 CORRETIVAS */
 sec="Solução"; pres.addSection({title:sec});
-s=S("CONTENT","Medidas corretivas");
-bullets(s,["Monitoramento topográfico de recalques e prumo","Reforço de fundação (underpinning) com estacas profundas até solo resistente","Reaprumo com macacos hidráulicos apoiados nas novas estacas","Alívio de cargas e controle de obras vizinhas"],0.5,1.3,5.0,3.8);
-s.addShape(pres.shapes.ROUNDED_RECTANGLE,{x:5.8,y:1.3,w:3.7,h:3.6,rectRadius:0.08,fill:{color:C.text2},line:{color:C.text2}});
-s.addText([{text:"Caso emblemático",options:{bold:true,fontSize:16,color:"C9A66B",breakLine:true}},{text:"Edifício Núcleo dos Andradas: reaprumado no início dos anos 2000, com estacas e macacos hidráulicos, reduzindo o desaprumo que passava de 2 m no topo.",options:{fontSize:14,color:C.background1}}],{x:6.0,y:1.5,w:3.3,h:3.2,valign:"top",isTextBox:true});
+s=S("Medidas corretivas: reforço e reaprumo","Exemplo: Edifício Núcleo dos Andradas, reaprumado no início dos anos 2000");
+soil(s,0.6,4.3,6.4,[0.8,1.5,0.6]);
+R(s,2.1,1.95,2.4,2.2,HEX.rust,{rot:4});line(s,3.3,1.75,0,2.4,HEX.dark,{dash:"dash",width:1});
+R(s,1.7,4.15,3.2,0.25,HEX.dark);
+[1.9,4.5].forEach(x=>{R(s,x,4.4,0.2,2.6,HEX.grey);});
+[1.75,4.35].forEach(x=>{R(s,x,4.0,0.5,0.17,HEX.sand,{lc:HEX.dark});});
+T(s,"estacas novas até o solo resistente",{x:5.0,y:5.3,w:2.0,h:0.6,fontSize:12,bold:true,color:C.background1});
+T(s,"macacos hidráulicos",{x:4.95,y:3.75,w:2.0,h:0.3,fontSize:12,bold:true,color:C.accent1});
+line(s,4.25,3.6,0,0.35,HEX.rust,{arrow:"triangle",width:2.5,barrow:"none"});
+[["Monitorar","Topografia de prumo e recalques para entender a velocidade do movimento."],["Reforçar (underpinning)","Estacas atravessam a argila e apoiam a fundação no solo resistente."],["Reaprumar","Macacos hidráulicos sobre as estacas levantam o lado que afundou, aos poucos."],["Travar","Ligar a fundação às estacas definitivamente e acompanhar depois da obra."]].forEach((c,i)=>{const y=1.75+i*1.25;
+ R(s,7.5,y,5.2,1.08,HEX.light,{round:1});num(s,7.7,y+0.29,i+1);T(s,c[0],{x:8.35,y:y+0.1,w:4.2,h:0.4,fontSize:16,bold:true,color:C.text2});T(s,c[1],{x:8.35,y:y+0.5,w:4.2,h:0.5,fontSize:13});});
 
-s=S("CONTENT","Prevenção: o que mudou");
-card(s,0.5,1.3,2.8,3.6,"Fundação profunda","Prédios altos em Santos passaram a usar estacas que atravessam a argila mole.",1);
-card(s,3.6,1.3,2.8,3.6,"Investigação","Sondagens SPT profundas e ensaios de adensamento para estimar recalques.",2);
-card(s,6.7,1.3,2.8,3.6,"Projeto","Verificar recalque (ELS), não só capacidade de carga; considerar vizinhos (NBR 6122).",3);
+/* 9 PREVENÇÃO */
+s=S("Prevenção: o que se faz hoje","Comparação entre a solução da época e a prática atual para prédios altos em Santos");
+[["ANTES: sapata rasa",false],["HOJE: estacas profundas",true]].forEach((p,i)=>{const x=0.6+i*3.4;
+ T(s,p[0],{x,y:1.7,w:3.1,h:0.4,fontSize:16,bold:true,color:i?C.accent4:C.accent1,align:"center"});
+ soil(s,x,4.0,3.1,[0.7,1.6,0.6]);R(s,x+0.75,4.0-1.85,1.6,1.85,i?"A9B4BA":HEX.rust,{rot:i?0:4});
+ if(i){[x+0.9,x+2.05].forEach(px=>R(s,px,4.0,0.16,2.9,HEX.dark));}else R(s,x+0.55,3.95,2.0,0.2,HEX.dark);
+ T(s,i?"carga levada ao solo resistente":"carga fica sobre a argila",{x,y:6.95,w:3.1,h:0.35,fontSize:12,italic:true,color:C.accent6,align:"center"});});
+[["Investigação","Sondagens SPT profundas e ensaios de adensamento da argila."],["Projeto","Verificar recalque (estado-limite de serviço), não só capacidade de carga — NBR 6122."],["Vizinhança","Considerar os bulbos de tensões e os recalques induzidos nos prédios ao lado."]].forEach((c,i)=>{const y=1.75+i*1.65;
+ R(s,7.9,y,4.8,1.45,HEX.light,{round:1});num(s,8.1,y+0.2,i+1,HEX.firm);T(s,c[0],{x:8.75,y:y+0.22,w:3.8,h:0.45,fontSize:17,bold:true,color:C.text2,valign:"middle"});T(s,c[1],{x:8.75,y:y+0.7,w:3.8,h:0.7,fontSize:14});});
 
+/* 10 CONCLUSÃO */
 sec="Conclusão"; pres.addSection({title:sec});
-s=S("DARK","Lições aprendidas");
-s.addText("Fundação boa não é só a que resiste: é a que recalca pouco e por igual. Conhecer o solo em profundidade e a interação com vizinhos evita patologias de décadas.\n\nReferências: Teixeira (1994); Massad, F. Solos Marinhos da Baixada Santista (2009); ABNT NBR 6122:2022.",{placeholder:"body"});
+s=pres.addSlide({masterName:"DARK",sectionTitle:sec});
+s.addText("Lições aprendidas",{x:0.6,y:0.6,w:12,h:0.9,fontFace:"Cambria",fontSize:38,bold:true,color:C.background1,isTextBox:true,margin:0});
+[["Fundação boa recalca pouco e por igual","Resistir não basta: o recalque diferencial é o que inclina o prédio."],["Conheça o solo em profundidade","A camada que falha pode estar muitos metros abaixo da fundação."],["Prédios não estão sozinhos","A interação com os vizinhos precisa entrar no projeto."]].forEach((c,i)=>{const x=0.6+i*4.15;
+ R(s,x,1.9,3.85,3.0,"243241",{round:1});T(s,"0"+(i+1),{x:x+0.3,y:2.1,w:1.5,h:0.7,fontSize:32,bold:true,color:HEX.sand,fontFace:"Cambria"});
+ T(s,c[0],{x:x+0.3,y:2.85,w:3.3,h:0.8,fontSize:18,bold:true,color:C.background1});T(s,c[1],{x:x+0.3,y:3.7,w:3.3,h:1.1,fontSize:14,color:"C9D3D8"});});
+T(s,"Referências: MASSAD, F. Solos marinhos da Baixada Santista. Oficina de Textos, 2009. · TEIXEIRA, A. H. (1994), estudos sobre os edifícios de Santos. · ABNT NBR 6122:2022 – Projeto e execução de fundações.",{x:0.6,y:5.6,w:12.1,h:0.9,fontSize:12,color:"9FB0B9"});
 
 (async()=>{await pres.writeFile({fileName:"Fundacoes_Santos.pptx"});await applyTheme("Fundacoes_Santos.pptx",THEME);})();
