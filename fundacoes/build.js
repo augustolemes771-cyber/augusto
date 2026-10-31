@@ -26,7 +26,7 @@ s.addImage({path:IMG+"orla.png",x:6.9,y:0,w:6.43,h:7.5,sizing:{type:"cover",w:6.
 T(s,"ESTUDO DE CASO · FALHAS EM FUNDAÇÕES",{x:0.6,y:1.2,w:6,h:0.4,fontSize:14,bold:true,color:HEX.sand,charSpacing:2});
 s.addText("Os prédios inclinados de Santos",{x:0.6,y:1.7,w:5.9,h:1.9,fontFace:"Cambria",fontSize:44,bold:true,color:C.background1,isTextBox:true,margin:0,valign:"top"});
 T(s,"Recalque diferencial de fundações rasas sobre argila marinha mole",{x:0.6,y:3.7,w:5.6,h:0.8,fontSize:18,color:"C9D3D8"});
-T(s,"Engenharia Civil · 6º período · Fundações\nProf. Me. Luiz Gustavo Pimenta de Pádua\nAluno: ________________________",{x:0.6,y:5.3,w:5.6,h:1.3,fontSize:14,color:"C9D3D8"});
+T(s,"Engenharia Civil · 6º período · Fundações\nProf. Me. Luiz Gustavo Pimenta de Pádua\nAluno: Augusto Lemes Ordonhes",{x:0.6,y:5.3,w:5.6,h:1.3,fontSize:14,color:"C9D3D8"});
 
 /* 2 A OBRA */
 sec="O caso"; pres.addSection({title:sec});
