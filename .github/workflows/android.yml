@@ -1,0 +1,20 @@
+name: Build Hindsight APK
+on:
+  push:
+    paths: ["android-hindsight/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: android-hindsight } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.7" }
+      - run: gradle assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hindsight-apk
+          path: android-hindsight/app/build/outputs/apk/release/*.apk
