@@ -263,7 +263,7 @@ video#preview { width: 100%; max-height: 52vh; border-radius: 12px; background: 
 (() => {
   const $ = (id) => document.getElementById(id);
   // A cada versão publicada, este número muda. O app compara com o do site e se atualiza sozinho.
-  const APP_VERSION = '20/10a';
+  const APP_VERSION = '24/11a';
   $('verTxt').textContent = 'versão ' + APP_VERSION + ' · atualiza sozinho';
   const EXAMPLE = `# ABERTURA
 Se você quer começar no *TikTok Shop* e não sabe por onde, presta atenção nesse vídeo.
@@ -912,8 +912,11 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
      O iPhone grava MP4 "em fragmentos" (feito pra transmissão). Editores como o CapCut se perdem nesse formato
      e travam/dessincronizam. Aqui os quadros são copiados, sem recodificar, pra um MP4 comum igual ao do app
      Câmera: um índice completo (moov) no começo e todos os dados depois. Também emenda vários trechos (pausas).
-     Devolve uma lista de pedaços pra montar o Blob, ou null se o arquivo não for do tipo esperado. */
-  function mp4Normal(bufs) {
+     Devolve uma lista de pedaços pra montar o Blob, ou null se o arquivo não for do tipo esperado.
+     MEMÓRIA: só os cabeçalhos (moov/moof, poucos KB) são lidos. Os quadros continuam no arquivo gravado e entram
+     no vídeo final como "fatias" dele (blob.slice), sem copiar. Antes o vídeo inteiro era carregado e copiado
+     (~3 cópias na memória): passando de ~3 min o iPhone descartava o arquivo (WebKitBlobResource erro 1). */
+  async function mp4Normal(blobs) {
     const dvw = a => new DataView(a.buffer, a.byteOffset, a.byteLength);
     const tipo4 = (a, o) => String.fromCharCode(a[o + 4], a[o + 5], a[o + 6], a[o + 7]);
     function caixas(a, o, fim) {
@@ -932,14 +935,27 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     const iguais = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
     const semBtrt = s => { const c = s.slice(); for (let i = 4; i + 16 <= c.length; i++) if (c[i] === 0x62 && c[i + 1] === 0x74 && c[i + 2] === 0x72 && c[i + 3] === 0x74) c.fill(0, i + 4, i + 16); return c; };
 
-    // lê um arquivo em fragmentos: trilhas + lista de quadros (onde está, tamanho, tempo, se é quadro-chave)
-    function ler(a) {
-      const v = dvw(a), top = caixas(a, 0, a.length);
+    // lê um arquivo em fragmentos: trilhas + lista de quadros (onde está, tamanho, tempo, se é quadro-chave).
+    // Percorre só os cabeçalhos das caixas; moov e moof (pequenos) são lidos inteiros, os dados (mdat) nunca.
+    async function ler(blob) {
+      const N = blob.size, top = [];
+      for (let o = 0; o + 8 <= N;) {
+        const h = new Uint8Array(await blob.slice(o, Math.min(N, o + 16)).arrayBuffer()), hv = dvw(h);
+        let tam = hv.getUint32(0), cab = 8;
+        if (tam === 1) { if (h.length < 16) break; tam = Number(hv.getBigUint64(8)); cab = 16; }
+        else if (tam === 0) tam = N - o;
+        if (tam < cab || o + tam > N) break;
+        const bx = { t: tipo4(h, 0), o, cab, tam };
+        if (bx.t === 'moov' || bx.t === 'moof') bx.b = new Uint8Array(await blob.slice(o, o + tam).arrayBuffer());
+        top.push(bx); o += tam;
+      }
       const moov = top.find(c => c.t === 'moov');
       if (!moov || !top.some(c => c.t === 'moof')) return null;
+      // moov: posições relativas ao começo da própria caixa
+      const a = moov.b, v = dvw(a), M = { o: 0, cab: moov.cab, tam: moov.tam };
       const sl = b => a.subarray(b.o, b.o + b.tam);
       const trilhas = {};
-      for (const tk of caixas(a, moov.o + moov.cab, moov.o + moov.tam).filter(c => c.t === 'trak')) {
+      for (const tk of caixas(a, M.cab, M.tam).filter(c => c.t === 'trak')) {
         const tkhd = filho(a, tk, 'tkhd'), mdia = filho(a, tk, 'mdia');
         if (!tkhd || !mdia) return null;
         const mdhd = filho(a, mdia, 'mdhd'), hdlr = filho(a, mdia, 'hdlr'), minf = filho(a, mdia, 'minf');
@@ -953,42 +969,44 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
           dDur: 0, dTam: 0, dFl: 0, q: []
         };
       }
-      const mvex = filho(a, moov, 'mvex');
+      const mvex = filho(a, M, 'mvex');
       if (mvex) for (const tx of caixas(a, mvex.o + mvex.cab, mvex.o + mvex.tam).filter(c => c.t === 'trex')) {
         const t = trilhas[v.getUint32(tx.o + 12)];
         if (t) { t.dDur = v.getUint32(tx.o + 20); t.dTam = v.getUint32(tx.o + 24); t.dFl = v.getUint32(tx.o + 28); }
       }
       for (const moof of top.filter(c => c.t === 'moof')) {
+        // fa = bytes do moof (posições relativas a ele); base/cur = posições ABSOLUTAS no arquivo gravado
+        const fa = moof.b, fv = dvw(fa);
         let fimAnt = moof.o, primeiro = true;
-        for (const tf of caixas(a, moof.o + moof.cab, moof.o + moof.tam).filter(c => c.t === 'traf')) {
-          const tfhd = filho(a, tf, 'tfhd'), tfdt = filho(a, tf, 'tfdt');
+        for (const tf of caixas(fa, moof.cab, moof.tam).filter(c => c.t === 'traf')) {
+          const tfhd = filho(fa, tf, 'tfhd'), tfdt = filho(fa, tf, 'tfdt');
           if (!tfhd) return null;
-          const fl = v.getUint32(tfhd.o + 8) & 0xffffff, tr = trilhas[v.getUint32(tfhd.o + 12)];
+          const fl = fv.getUint32(tfhd.o + 8) & 0xffffff, tr = trilhas[fv.getUint32(tfhd.o + 12)];
           if (!tr) return null;
           let p = tfhd.o + 16, base;
-          if (fl & 1) { base = Number(v.getBigUint64(p)); p += 8; }
+          if (fl & 1) { base = Number(fv.getBigUint64(p)); p += 8; }
           else base = (fl & 0x20000) || primeiro ? moof.o : fimAnt;
           if (fl & 2) p += 4;
           let dDur = tr.dDur, dTam = tr.dTam, dFl = tr.dFl;
-          if (fl & 8) { dDur = v.getUint32(p); p += 4; }
-          if (fl & 0x10) { dTam = v.getUint32(p); p += 4; }
-          if (fl & 0x20) { dFl = v.getUint32(p); p += 4; }
-          let t = tfdt ? (a[tfdt.o + 8] === 1 ? Number(v.getBigUint64(tfdt.o + 12)) : v.getUint32(tfdt.o + 12))
+          if (fl & 8) { dDur = fv.getUint32(p); p += 4; }
+          if (fl & 0x10) { dTam = fv.getUint32(p); p += 4; }
+          if (fl & 0x20) { dFl = fv.getUint32(p); p += 4; }
+          let t = tfdt ? (fa[tfdt.o + 8] === 1 ? Number(fv.getBigUint64(tfdt.o + 12)) : fv.getUint32(tfdt.o + 12))
                        : (tr.q.length ? tr.q[tr.q.length - 1].dts + tr.q[tr.q.length - 1].dur : 0);
           let cur = base;
-          for (const run of caixas(a, tf.o + tf.cab, tf.o + tf.tam).filter(c => c.t === 'trun')) {
-            const ver = a[run.o + 8], tfl = v.getUint32(run.o + 8) & 0xffffff, n = v.getUint32(run.o + 12);
+          for (const run of caixas(fa, tf.o + tf.cab, tf.o + tf.tam).filter(c => c.t === 'trun')) {
+            const ver = fa[run.o + 8], tfl = fv.getUint32(run.o + 8) & 0xffffff, n = fv.getUint32(run.o + 12);
             let q = run.o + 16, pf = null;
-            if (tfl & 1) { cur = base + v.getInt32(q); q += 4; }
-            if (tfl & 4) { pf = v.getUint32(q); q += 4; }
+            if (tfl & 1) { cur = base + fv.getInt32(q); q += 4; }
+            if (tfl & 4) { pf = fv.getUint32(q); q += 4; }
             for (let i = 0; i < n; i++) {
               let dur = dDur, tam = dTam, sfl = (i === 0 && pf !== null) ? pf : dFl, cto = 0;
-              if (tfl & 0x100) { dur = v.getUint32(q); q += 4; }
-              if (tfl & 0x200) { tam = v.getUint32(q); q += 4; }
-              if (tfl & 0x400) { sfl = v.getUint32(q); q += 4; }
-              if (tfl & 0x800) { cto = ver ? v.getInt32(q) : v.getUint32(q); q += 4; }
-              if (cur + tam > a.length) return null;
-              tr.q.push({ a, off: cur, tam, dts: t, dur, cto, chave: !(sfl & 0x10000) });
+              if (tfl & 0x100) { dur = fv.getUint32(q); q += 4; }
+              if (tfl & 0x200) { tam = fv.getUint32(q); q += 4; }
+              if (tfl & 0x400) { sfl = fv.getUint32(q); q += 4; }
+              if (tfl & 0x800) { cto = ver ? fv.getInt32(q) : fv.getUint32(q); q += 4; }
+              if (cur < 0 || cur + tam > N) return null;
+              tr.q.push({ src: blob, off: cur, tam, dts: t, dur, cto, chave: !(sfl & 0x10000) });
               t += dur; cur += tam;
             }
           }
@@ -1000,7 +1018,8 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
       return { porTipo };
     }
 
-    const arqs = bufs.map(b => ler(new Uint8Array(b)));
+    const arqs = [];
+    for (const b of blobs) arqs.push(await ler(b));      // um de cada vez: pouca memória
     if (!arqs.length || arqs.some(x => !x)) return null;
     const ref = arqs[0].porTipo;
     const tipos = Object.keys(ref).sort((x, y) => (y === 'vide') - (x === 'vide'));   // imagem primeiro
@@ -1085,15 +1104,16 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     moov = montarMoov(ftyp.length + moov.length + cabMdat);
     const mdatCab = grande ? cat([u32(1), txt('mdat'), u64(totalDados + 16)]) : cat([u32(totalDados + 8), txt('mdat')]);
     const partes = [ftyp, moov, mdatCab];
-    // junta pedaços vizinhos do mesmo arquivo pra não criar milhares de partes
+    // junta pedaços vizinhos do mesmo arquivo pra não criar milhares de partes.
+    // Cada parte é uma FATIA do arquivo gravado (blob.slice): o navegador só aponta pro original, não copia.
     let ini = null, ult = null;
     for (const x of todas) {
       const s = x.s;
-      if (ult && ult.a === s.a && ult.off + ult.tam === s.off) { ult = s; continue; }
-      if (ini) partes.push(ini.a.subarray(ini.off, ult.off + ult.tam));
+      if (ult && ult.src === s.src && ult.off + ult.tam === s.off) { ult = s; continue; }
+      if (ini) partes.push(ini.src.slice(ini.off, ult.off + ult.tam));
       ini = ult = s;
     }
-    if (ini) partes.push(ini.a.subarray(ini.off, ult.off + ult.tam));
+    if (ini) partes.push(ini.src.slice(ini.off, ult.off + ult.tam));
     return partes;
   }
 
@@ -1261,8 +1281,21 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     if (r && r.state !== 'inactive') r.stop();
     try { if (r && r._pronto) await r._pronto; } catch (e) {}
     $('recBtn').disabled = false;
-    await finishRec();
-    parando = false;
+    try { await finishRec(); }
+    catch (e) {
+      // não deixa o vídeo sumir nem o botão de parar travar: entrega o primeiro trecho como foi gravado
+      dlog('erro ao finalizar: ' + (e && (e.name || e.message)));
+      try {
+        if (segs[0]) {
+          if (blobUrl) URL.revokeObjectURL(blobUrl);
+          lastBlob = segs[0]; blobUrl = URL.createObjectURL(lastBlob);
+          $('preview').src = blobUrl; $('dlLink').href = blobUrl;
+          $('doneInfo').textContent = 'Vídeo no formato original';
+          $('diagTxt').textContent = diag.join('\n');
+          $('doneSheet').hidden = false;
+        }
+      } catch (e2) {}
+    } finally { parando = false; }
   }
   let lastDuration = 0, segUrls = [];
   async function finishRec() {
@@ -1278,10 +1311,10 @@ Me segue pra não perder o próximo episódio. E comenta aqui qual é a sua maio
     if (ext === 'mp4' && segs.length) {
       // MP4 normal (abre certinho no CapCut); se não der, tenta só emendar os fragmentos; se nem isso, entrega os trechos
       $('doneInfo').textContent = segs.length > 1 ? 'Juntando os trechos…' : 'Preparando o vídeo…';
-      const bufs = await Promise.all(segs.map(b => b.arrayBuffer()));
       let partes = null;
-      try { partes = mp4Normal(bufs); } catch (e) { partes = null; }
-      if (!partes && segs.length > 1) { try { partes = juntarMp4(bufs); } catch (e) { partes = null; } }
+      try { partes = await mp4Normal(segs); } catch (e) { partes = null; dlog('montar MP4 falhou: ' + (e && (e.name || e.message))); }
+      // plano B (carrega tudo na memória): só se o MP4 normal não deu certo
+      if (!partes && segs.length > 1) { try { partes = juntarMp4(await Promise.all(segs.map(b => b.arrayBuffer()))); } catch (e) { partes = null; } }
       if (partes) lastBlob = new Blob(partes, { type: 'video/mp4' });
       else if (segs.length > 1) { falhouJuntar = true; lastBlob = segs[0]; }
       else lastBlob = segs[0];
